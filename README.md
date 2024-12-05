@@ -1,6 +1,27 @@
 # AWS Lambda API Tools
 
-A powerful toolkit for building enterprise-grade REST APIs with AWS Lambda and API Gateway (HTTP API). This package provides a structured approach to routing, middleware management, schema validation, and JWT authentication, with full TypeScript support.
+> **Alpha Release Notice**: This package is currently in alpha. While it has been battle-tested in enterprise environments, the public API may undergo changes as we gather community feedback.
+
+## Author's Note
+
+Over the past five years, I've developed and refined this toolkit while building enterprise-grade applications on AWS. What started as a simple routing solution has evolved into a comprehensive toolkit that has successfully handled millions of requests in production environments.
+
+This package embodies best practices learned from:
+- Migrating from AWS CDK v1.x to v2.x
+- Building and maintaining large-scale Lambda-based APIs
+- Supporting multiple enterprise applications in production
+- Implementing robust security and validation patterns
+- Optimizing Lambda cold starts and performance
+
+While the core functionality is stable and proven, I'm releasing this as an alpha version to gather community feedback and ensure the public API meets the needs of a broader audience.
+
+### Coming Soon
+- Complete example project from zero to production
+- Step-by-step AWS account setup guide
+- CDK infrastructure templates
+- Performance optimization guides
+- Advanced middleware patterns
+- Real-world use cases
 
 ## Key Features
 
