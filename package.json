@@ -1,0 +1,49 @@
+{
+  "name": "aws-lambda-api-tools",
+  "version": "0.1.0",
+  "description": "",
+  "main": "dist/index.js",
+  "bin": {
+    "generate-oas": "./bin/generate-swagger.js"
+  },
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublish-not": "npm run build && npm version patch -m 'Updated version to %s'",
+    "test": "jest",
+    "generate-swagger": "node -r ts-node/register bin/generate-swagger.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:wesreid/pkg-core-app-sdk.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/atob": "^2.1.4",
+    "@types/aws-lambda": "^8.10.146",
+    "@types/formidable": "^1.2.8",
+    "@types/jest": "^26.0.24",
+    "@types/minimist": "^1.2.5",
+    "@types/node": "^15.14.9",
+    "@types/node-fetch": "^2.6.12",
+    "esbuild": "^0.12.29",
+    "jest": "^26.6.3",
+    "nodemon": "^2.0.22",
+    "prettier": "^2.8.8",
+    "ts-jest": "^26.5.6",
+    "ts-node": "^9.1.1",
+    "typescript": "^4.9.5"
+  },
+  "dependencies": {
+    "atob": "^2.1.2",
+    "joi": "^17.13.3",
+    "joi-to-swagger": "^5.2.0",
+    "minimist": "^1.2.8"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ]
+}

@@ -1,0 +1,1 @@
+{"version":3,"file":"authorization-helper.js","sourceRoot":"","sources":["../../src/lib/authorization-helper.ts"],"names":[],"mappings":";;;AACA,gDAAgD;AAEzC,MAAM,cAAc,GAAG,CAAC,KAA6B,EAAE,EAAE;IAC9D,gBAAgB;IAChB,MAAM,KAAK,GAAW,KAAK,CAAC,OAAQ,CAAC,aAAuB,CAAC;IAC7D,IAAI,CAAC,KAAK,EAAE;QACV,qFAAqF;KACtF;IACD,iDAAiD;AACnD,CAAC,CAAC;AAPW,QAAA,cAAc,kBAOzB"}
