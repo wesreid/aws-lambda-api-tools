@@ -15,7 +15,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git@github.com:wesreid/pkg-core-app-sdk.git"
+    "url": "git@github.com:wesreid/aws-lambda-api-tools.git"
   },
   "keywords": [],
   "author": "",
