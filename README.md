@@ -32,7 +32,7 @@ While the core functionality is stable and proven, I'm releasing this as an alph
 - 📝 **OpenAPI/Swagger** - Automatic API documentation generation
 - 🔍 **Type Safety** - Comprehensive TypeScript support
 - 🎯 **Path Parameters** - Support for dynamic route parameters
-- ⚡ **Performance** - Optimized for AWS Lambda execution
+- ⚡ **Performance** - Optimized for AWS Lambda execution.
 
 ## Installation
 
