@@ -1,5 +1,6 @@
 *.js
 !jest.config.js
+!bin/*.js
 *.d.ts
 node_modules
 .DS_Store
