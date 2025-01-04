@@ -41,18 +41,27 @@ export const lambdaRouteProxyEntryHandler = (config: RouteConfig, availableRoute
       queryStringParameters,
       pathParameters,
       body,
+      isBase64Encoded,
     } = event;
     let retVal = {};
     try {
-      const [method, path] = routeKey.split(' ');
-      if (shouldAuthorizeRoute(config, getRouteConfigEntry(config, method!, path!))) {
+      const [method = '', path = ''] = routeKey.split(' ');
+      if (shouldAuthorizeRoute(config, getRouteConfigEntry(config, method, path))) {
         await authorizeRoute(event);
       }
-      const routeModule = getRouteModule(config, method!, path!, availableRouteModules);
+      const routeModule = getRouteModule(config, method, path, availableRouteModules);
+
+      console.log(`isBase64Encoded: ${isBase64Encoded}`);
+      console.log(`body: ${body}`);
+      const decodedBody = isBase64Encoded ? Buffer.from(body!, 'base64').toString('utf-8') : undefined;
+      console.log(`decodedBody:
+      ${decodedBody}`);
+
+
       retVal = await getRouteModuleResult(routeModule, {
         query: queryStringParameters,
         params: pathParameters,
-        body: body ? JSON.parse(body) : undefined,
+        body: body ? decodedBody || JSON.parse(body) : undefined,
         rawEvent: event,
       });
     } catch (error: any) {

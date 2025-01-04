@@ -20,7 +20,6 @@ cdk.out
 .esbuild
 
 #ts build files
-/lib
-./dist
+dist
 
 route-modules-oas.json
