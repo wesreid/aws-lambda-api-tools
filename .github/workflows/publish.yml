@@ -7,6 +7,11 @@ on:
     paths-ignore:
       - '**.md'
 
+# Add permissions block at workflow level
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -39,6 +44,7 @@ jobs:
         run: npm run bump-version
 
       - name: Publish to NPM
+        if: "!contains(github.event.head_commit.message, '[skip publish]')"
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
