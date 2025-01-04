@@ -1,104 +1,105 @@
-import { APIGatewayProxyEventV2 } from 'aws-lambda';
-import { Schema } from 'joi';
+import * as joi from 'joi';
+import joiToSwagger, { ComponentsSchema } from 'joi-to-swagger';
+import { ConfigRouteEntry, RouteSchema } from './types-and-interfaces';
 import * as swaggerTypes from './swagger-specification-types';
 
-export type ConfigRouteEntry = {
-  functionName?: string;
-  description: string;
-  swaggerMethodName?: string,
-  path: string;
-  method: 'ANY' | 'DELETE' | 'GET' | 'HEAD' | 'OPTIONS' | 'PATCH' | 'POST' | 'PUT';
-  generateOpenApiDocs: boolean,
-  handlerPath: string;
-  authorizeRoute?: boolean;
+type RouteSpecType = {
+  path: {
+    description: string,
+    operationId?: string,
+    parameters?: Array<swaggerTypes.ParameterObject>,
+    requestBody?: swaggerTypes.RequestBody,
+    responses?: Record<string, swaggerTypes.ResponseObject>,
+  },
+  components: {
+    schemas: Record<string, ComponentsSchema>,
+  },
 };
 
-export type RouteConfig = {
-  authorizeAllRoutes?: boolean;
-  routes: Array<ConfigRouteEntry>;
-};
+export const generateRouteSwaggerSpec = (schema: RouteSchema, routeEntry: ConfigRouteEntry): RouteSpecType => {
+  const { requestBody: requestBodyJoiSchema, query: queryJoiSchema, params: pathParamsJoiSchema, responseBody: responseBodyJoiSchema } = { requestBody: {}, query: {}, params: {}, responseBody: {}, ...schema };
+  const { description, swaggerMethodName } = routeEntry;
+  // console.log('schema:')
+  // console.log(schema);
+  let parameters: Array<swaggerTypes.ParameterObject> = [];
+  let requestBody: swaggerTypes.RequestBody | undefined = undefined;
+  let responseBody: swaggerTypes.ResponseObject = { description: 'Default response' };
+  // let requestBodyRefKey: string | undefined;
+  // let responseBodyRefKey: string | undefined;
+  let componentSchemas: Record<string, ComponentsSchema> = {};
+  if (pathParamsJoiSchema && Object.keys(pathParamsJoiSchema).length > 0) {
+    const pathParamsKeys = Object.keys(pathParamsJoiSchema);
+    const pathParamsSwaggerParameters = pathParamsKeys.map<swaggerTypes.ParameterObject>((key) => ({
+      name: key,
+      in: 'path',
+      required: true,
+      schema: joiToSwagger(pathParamsJoiSchema[key]!).swagger,
+    }));
+    parameters = Array<swaggerTypes.ParameterObject>().concat(parameters, pathParamsSwaggerParameters);
+  }
+  if (queryJoiSchema && Object.keys(queryJoiSchema).length > 0) {
+    const queryKeys = Object.keys(queryJoiSchema);
+    const queryParamsSwaggerParameters = queryKeys.map<swaggerTypes.ParameterObject>((key) => {
+      const { presence } = queryJoiSchema[key]!._flags;
+      return {
+        name: key,
+        in: 'query',
+        required: presence === 'required',
+        schema: joiToSwagger(queryJoiSchema[key]!).swagger,
+      };
+    });
+    parameters = Array<swaggerTypes.ParameterObject>().concat(parameters, queryParamsSwaggerParameters);
+  }
+  if (requestBodyJoiSchema && Object.keys(requestBodyJoiSchema).length > 0) {
+    const { swagger, components: requestComponent } = joiToSwagger(
+      joi.isSchema(requestBodyJoiSchema) ? requestBodyJoiSchema : joi.object(requestBodyJoiSchema)
+    );
+    requestBody = {
+      description: 'Default response body',
+      content: {
+        'application/json': {
+          schema: swagger,
+        },
+      },
+    };
+    // console.log(swagger);
+    if (swagger.$ref || (swagger.items && swagger.items.$ref)) {
+      // requestBodyRefKey = swagger.$ref.split('/').reverse()[0];
+      componentSchemas = { ...componentSchemas, ...requestComponent!.schemas };
+    }
+  }
+  if (responseBodyJoiSchema && Object.keys(responseBodyJoiSchema).length > 0) {
+    const { swagger, components: responseComponent } = joiToSwagger(
+      joi.isSchema(responseBodyJoiSchema) ? responseBodyJoiSchema : joi.object(responseBodyJoiSchema)
+    );
+    // console.log(JSON.stringify(j2s, null, 2));
+    // console.log(swagger);
+    responseBody = {
+      description: 'Default response body',
+      content: {
+        'application/json': {
+          schema: swagger,
+        },
+      },
+    };
+    if (swagger.$ref || (swagger.items && swagger.items.$ref)) {
+      // responseBodyRefKey = swagger.$ref.split('/').reverse()[0];
+      componentSchemas = { ...componentSchemas, ...responseComponent!.schemas };
+    }
+  }
 
-export type RouteArguments = {
-  params?: any;
-  body?: any;
-  query?: any;
-  form?: any;
-  rawEvent?: APIGatewayProxyEventV2;
-  routeData?: any;
-};
-
-export interface RouteSchema {
-  params?: { [key: string]: Schema<any> };
-  query?: { [key: string]: Schema<any> };
-  form?: { [key: string]: Schema<any> };
-  requestBody?: Schema<any> | { [key: string]: Schema<any> };
-  responseBody?: Schema<any> | { [key: string]: Schema<any> };
-}
-
-export interface BaseResponseObject extends swaggerTypes.ResponseObject {}
-
-export interface ResponseError extends swaggerTypes.ResponseObject {
-  error: {
-    statusCode: string;
-    message: string;
+  return {
+    path: {
+      description,
+      operationId: swaggerMethodName || undefined,
+      parameters,
+      requestBody,
+      responses: {
+        '200': responseBody,
+      },
+    },
+    components: {
+      schemas: componentSchemas,
+    },
   };
-}
-
-export interface ResponseData extends swaggerTypes.ResponseObject {
-  data: any;
-}
-
-export type ResponseObject<T> = ResponseData | ResponseError;
-
-export type BaseRouteResponse<T> = {
-  [key in
-    | '201'
-    | '202'
-    | '203'
-    | '204'
-    | '205'
-    | '206'
-    | '400'
-    | '401'
-    | '402'
-    | '403'
-    | '404'
-    | '405'
-    | '406'
-    | '407'
-    | '408'
-    | '409'
-    | '410'
-    | '411'
-    | '412'
-    | '413'
-    | '414'
-    | '415'
-    | '416'
-    | '417'
-    | '418'
-    | '419']: ResponseObject<T>;
 };
-
-export interface RouteResponse<T> extends BaseRouteResponse<T> {
-  '200': ResponseObject<T>;
-}
-
-export type MiddlewareSchemaInputFunction = (input: RouteSchema) => RouteArguments;
-export type MiddlewareArgumentsInputFunction = (input: RouteArguments) => any;
-export type MiddlewareChain = Array<MiddlewareArgumentsInputFunction>;
-export type RouteModule = {
-  routeChain: MiddlewareChain;
-  routeSchema: RouteSchema;
-};
-
-export interface Permission {
-  id: string;
-  systemPermission: string;
-  enabled: boolean;
-  humanReadableName: string;
-  entity: {
-    level: string;
-    humanReadableName: string;
-  };
-}
