@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { chmod, writeFile } from 'fs/promises';
+import { chmod } from 'fs/promises';
 import { join } from 'path';
 
 async function buildBinary() {
@@ -17,7 +17,6 @@ async function buildBinary() {
   for (const file of files) {
     const outFile = join(process.cwd(), file.out);
     
-    // First build without banner
     await build({
       entryPoints: [file.entry],
       bundle: true,
@@ -28,13 +27,11 @@ async function buildBinary() {
       minify: true,
       sourcemap: false,
       external: ['aws-cdk-lib', 'aws-cdk-lib/*', 'aws-cdk', 'commander'],
+      banner: {
+        js: '#!/usr/bin/env node',
+      },
     });
 
-    // Read the output and prepend shebang
-    const content = await import('fs').then(fs => 
-      fs.readFileSync(outFile, 'utf8')
-    );
-    await writeFile(outFile, `#!/usr/bin/env node\n${content}`);
     await chmod(outFile, '755');
   }
 }
