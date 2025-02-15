@@ -224,23 +224,9 @@ interface RouteArguments {
    - Implement proper permission checks
    - Validate all input data
 
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-MIT
-
 ## GitHub Actions IAM Setup
 
 This package includes a utility to set up IAM OIDC authentication for GitHub Actions, allowing secure deployments to AWS without storing long-lived credentials.
-
-### Installation
-
-```bash
-npm install aws-lambda-api-tools
-```
 
 ### Usage
 
@@ -329,3 +315,12 @@ You can run the command again with different repositories to update the stack:
 - New repositories will be added to the trust policy
 - Existing repositories will remain unchanged
 - The attached policy can be updated by specifying a new --policy value
+
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+MIT
