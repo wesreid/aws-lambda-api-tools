@@ -231,3 +231,15 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## License
 
 MIT
+
+## GitHub Actions IAM Setup
+
+This package includes a utility to set up IAM OIDC authentication for GitHub Actions so that you can deploy to AWS from your GitHub Actions:
+
+```bash
+npx gh-oidc-iam --repo=owner/repo-name [--policy=PolicyName]
+```
+
+Options:
+- `--repo`: (Required) Your GitHub repository in the format `owner/repo-name`
+- `--policy`: (Optional) AWS managed policy name to attach to the role. Defaults to 'AdministratorAccess'
