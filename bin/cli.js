@@ -1,3 +1,2 @@
 #!/usr/bin/env node
-#!/usr/bin/env node
 "use strict";var o=require("commander"),a=require("path");o.program.name("aws-lambda-api-tools").description("CLI tools for AWS Lambda and API Gateway").version("0.1.5");o.program.command("create-gha-iam-stack").description("Create IAM stack for GitHub Actions OIDC authentication").requiredOption("--repo <owner/repo>","GitHub repository (owner/repo)").option("--policy <name>","AWS managed policy name","AdministratorAccess").action(async r=>{process.argv=[process.argv[0],process.argv[1],`--repo=${r.repo}`,`--policy=${r.policy}`],require((0,a.join)(__dirname,"bootstrap-iam.js"))});o.program.parse();

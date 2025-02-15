@@ -7,20 +7,20 @@ console.log('Starting GitHub OIDC IAM setup...');
 
 // Parse command line arguments
 const args = process.argv.slice(2);
-const repoArg = args.find(t => t.startsWith("--repo="));
+const repoArgs = args.filter(t => t.startsWith("--repo=")).map(t => t.split("=")[1]);
 const policyArg = args.find(t => t.startsWith("--policy="));
 
-if (!repoArg) {
-  console.error("Error: --repo argument is required");
-  console.error("Usage: create-gha-iam-stack --repo=owner/repo-name [--policy=PolicyName]");
-  console.error("Example: create-gha-iam-stack --repo=myorg/my-repo --policy=AdministratorAccess");
+if (repoArgs.length === 0) {
+  console.error("Error: at least one --repo argument is required");
+  console.error("Usage: create-gha-iam-stack --repo=owner/repo-name [--repo=owner/another-repo] [--policy=PolicyName]");
+  console.error("Example: create-gha-iam-stack --repo=myorg/my-repo --repo=myorg/another-repo --policy=AdministratorAccess");
   process.exit(1);
 }
 
-const repoName = repoArg.split("=")[1];
+const repoNames = repoArgs;
 const policyName = policyArg ? policyArg.split("=")[1] : "AdministratorAccess";
 
-console.log(`Configuring for repository: ${repoName}`);
+console.log(`Configuring for repositories: ${repoNames.join(", ")}`);
 console.log(`Using policy: ${policyName}`);
 
 const app = new App();
@@ -48,12 +48,12 @@ class GithubActionsIamStack extends Stack {
             "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
           },
           StringLike: {
-            "token.actions.githubusercontent.com:sub": `repo:${repoName}:*`
+            "token.actions.githubusercontent.com:sub": repoNames.map(repo => `repo:${repo}:*`)
           }
         }
       ),
       managedPolicies: [
-        ManagedPolicy.fromAwsManagedPolicyName(policyName)
+        ManagedPolicy.fromAwsManagedPolicyName(policyName!)
       ]
     });
 

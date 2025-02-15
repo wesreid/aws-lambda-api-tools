@@ -1,11 +1,8 @@
-name: Publish Package
+name: Publish Package to NPM
 
 on:
   push:
-    branches:
-      - main
-    paths-ignore:
-      - '**.md'
+    branches: [ main ]
 
 # Add permissions block at workflow level
 permissions:
@@ -19,37 +16,34 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
-
+      
       - name: Configure Git
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build
+        run: npm run build
+      
+      - name: Commit built files
+        run: |
+          git add .
+          git commit -m "chore: update built files" || echo "No changes to commit"
+      
       - name: Bump version
-        run: npm run bump-version
-
+        run: |
+          npm run bump-version
+          git push
+      
       - name: Publish to NPM
-        if: "!contains(github.event.head_commit.message, '[skip publish]')"
         run: npm publish
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Push changes
-        run: |
-          git push
-          git push --tags 
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} 
