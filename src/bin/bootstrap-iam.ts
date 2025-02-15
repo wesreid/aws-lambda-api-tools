@@ -12,8 +12,8 @@ const policyArg = args.find(t => t.startsWith("--policy="));
 
 if (!repoArg) {
   console.error("Error: --repo argument is required");
-  console.error("Usage: gh-oidc-iam --repo=owner/repo-name [--policy=PolicyName]");
-  console.error("Example: gh-oidc-iam --repo=myorg/my-repo --policy=AdministratorAccess");
+  console.error("Usage: create-gha-iam-stack --repo=owner/repo-name [--policy=PolicyName]");
+  console.error("Example: create-gha-iam-stack --repo=myorg/my-repo --policy=AdministratorAccess");
   process.exit(1);
 }
 
