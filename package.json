@@ -9,7 +9,8 @@
   },
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc && ts-node scripts/build-binaries.ts",
+    "build": "node -r esbuild-register scripts/build-binaries.ts",
+    "prepare": "npm run build",
     "bump-version": "npm run build && npm version patch -m 'Updated version to %s [skip ci]'",
     "test": "jest",
     "generate-swagger": "node -r ts-node/register bin/generate-swagger.js",
@@ -31,11 +32,13 @@
     "@types/minimist": "^1.2.5",
     "@types/node": "^15.14.9",
     "@types/node-fetch": "^2.6.12",
-    "esbuild": "^0.12.29",
+    "esbuild": "^0.19.0",
+    "esbuild-register": "^3.5.0",
     "jest": "^29.7.0",
     "nodemon": "^2.0.22",
     "prettier": "^2.8.8",
-    "ts-jest": "^29.2.5"
+    "ts-jest": "^29.2.5",
+    "typescript": "~4.9.5"
   },
   "dependencies": {
     "@types/atob": "^2.1.2",
@@ -46,7 +49,8 @@
     "@types/minimist": "^1.2.2",
     "@types/node-fetch": "^2.5.12",
     "atob": "^2.1.2",
-    "aws-cdk-lib": "^2.178.2",
+    "aws-cdk": "^2.178.2",
+    "aws-cdk-lib": "^2.0.0",
     "axios": "^1.6.3",
     "joi": "^17.12.3",
     "joi-to-swagger": "6.2.0",
@@ -54,8 +58,7 @@
     "js-yaml": "^4.1.0",
     "lodash": "^4.17.21",
     "minimist": "^1.2.6",
-    "ts-node": "^10.9.1",
-    "typescript": "^5.0.0"
+    "ts-node": "^10.9.1"
   },
   "files": [
     "bin/*.js",
