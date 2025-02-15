@@ -234,12 +234,98 @@ MIT
 
 ## GitHub Actions IAM Setup
 
-This package includes a utility to set up IAM OIDC authentication for GitHub Actions so that you can deploy to AWS from your GitHub Actions:
+This package includes a utility to set up IAM OIDC authentication for GitHub Actions, allowing secure deployments to AWS without storing long-lived credentials.
+
+### Installation
 
 ```bash
-npx gh-oidc-iam --repo=owner/repo-name [--policy=PolicyName]
+npm install aws-lambda-api-tools
 ```
 
-Options:
-- `--repo`: (Required) Your GitHub repository in the format `owner/repo-name`
+### Usage
+
+Create or update an IAM stack for GitHub Actions OIDC authentication:
+
+```bash
+npx aws-lambda-api-tools create-gha-iam-stack --repo=owner/repo-name
+```
+
+### Options
+
+- `--repo`: (Required, Multiple) GitHub repository in the format `owner/repo-name`. Can be specified multiple times to grant access to multiple repositories
 - `--policy`: (Optional) AWS managed policy name to attach to the role. Defaults to 'AdministratorAccess'
+- Uses AWS credentials from your environment or AWS_PROFILE
+
+### Examples
+
+**Single Repository:**
+```bash
+npx aws-lambda-api-tools create-gha-iam-stack --repo=myorg/my-service
+```
+
+**Multiple Repositories:**
+```bash
+npx aws-lambda-api-tools create-gha-iam-stack \
+  --repo=myorg/service-a \
+  --repo=myorg/service-b \
+  --repo=myorg/service-c
+```
+
+**Custom IAM Policy:**
+```bash
+npx aws-lambda-api-tools create-gha-iam-stack \
+  --repo=myorg/my-service \
+  --policy=AWSLambda_FullAccess
+```
+
+**Using AWS Profile:**
+```bash
+AWS_PROFILE=staging npx aws-lambda-api-tools create-gha-iam-stack \
+  --repo=myorg/my-service
+```
+
+### Implementation Details
+
+The tool creates a CloudFormation stack named `GithubActionsIam` containing:
+
+1. An OIDC Provider for GitHub Actions (if it doesn't exist)
+2. An IAM Role with:
+   - Trust policy configured for the specified GitHub repositories
+   - Specified AWS managed policy attached (defaults to AdministratorAccess)
+
+The role ARN is output after stack creation/update and can be used in your GitHub Actions workflows.
+
+### Using in GitHub Actions
+
+Add the following to your GitHub Actions workflow:
+
+```yaml
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}  # Role ARN from stack output
+          aws-region: us-east-1
+      
+      - name: Deploy
+        run: |
+          # Your deployment steps here
+```
+
+Set the `AWS_ROLE_ARN` secret in your GitHub repository to the role ARN output by the create-gha-iam-stack command.
+
+### Updating Existing Stacks
+
+You can run the command again with different repositories to update the stack:
+- New repositories will be added to the trust policy
+- Existing repositories will remain unchanged
+- The attached policy can be updated by specifying a new --policy value
