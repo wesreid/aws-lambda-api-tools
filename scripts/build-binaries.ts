@@ -1,19 +1,26 @@
 import { build } from 'esbuild';
-import { chmod } from 'fs/promises';
+import { chmod, writeFile } from 'fs/promises';
 import { join } from 'path';
 
 async function buildBinary() {
+  const outFile = join(process.cwd(), 'bin/bootstrap-iam.js');
+  
   await build({
     entryPoints: ['src/bin/bootstrap-iam.ts'],
     bundle: true,
     platform: 'node',
     target: 'node16',
-    outfile: 'bin/bootstrap-iam.js',
+    outfile: outFile,
     format: 'cjs',
+    minify: true,
+    sourcemap: false,
+    external: ['aws-cdk-lib', 'aws-cdk-lib/*'],
+    banner: {
+      js: '#!/usr/bin/env node',
+    },
   });
 
-  // Make the output file executable
-  await chmod(join(process.cwd(), 'bin/bootstrap-iam.js'), '755');
+  await chmod(outFile, '755');
 }
 
 buildBinary().catch((err) => {
