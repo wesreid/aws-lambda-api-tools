@@ -1,3 +1,12 @@
 #!/usr/bin/env node
-require('ts-node/register');
+
+// Register ts-node with esm support
+require('ts-node').register({
+  transpileOnly: true,
+  compilerOptions: {
+    module: 'commonjs'
+  }
+});
+
+// Run the TypeScript file
 require('./bootstrap-iam.ts'); 

@@ -1,6 +1,6 @@
 #!/usr/bin/env ts-node
-import * as cdk from 'aws-cdk-lib';
-import * as iam from 'aws-cdk-lib/aws-iam';
+import { App, Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
+import { OpenIdConnectProvider, Role, WebIdentityPrincipal, ManagedPolicy } from 'aws-cdk-lib/aws-iam';
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -17,19 +17,19 @@ if (!repoArg) {
 const repoName = repoArg.split('=')[1];
 const policyName = policyArg ? policyArg.split('=')[1] : 'AdministratorAccess';
 
-const app = new cdk.App();
+const app = new App();
 
-class GithubActionsIamStack extends cdk.Stack {
-  constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
+class GithubActionsIamStack extends Stack {
+  constructor(scope: App, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const githubOidcProvider = new iam.OpenIdConnectProvider(this, 'GithubOidcProvider', {
+    const githubOidcProvider = new OpenIdConnectProvider(this, 'GithubOidcProvider', {
       url: 'https://token.actions.githubusercontent.com',
       clientIds: ['sts.amazonaws.com'],
     });
 
-    const deploymentRole = new iam.Role(this, 'GithubActionsRole', {
-      assumedBy: new iam.WebIdentityPrincipal(
+    const deploymentRole = new Role(this, 'GithubActionsRole', {
+      assumedBy: new WebIdentityPrincipal(
         githubOidcProvider.openIdConnectProviderArn,
         {
           StringEquals: {
@@ -41,11 +41,11 @@ class GithubActionsIamStack extends cdk.Stack {
         }
       ),
       managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName(policyName),
+        ManagedPolicy.fromAwsManagedPolicyName(policyName),
       ],
     });
 
-    new cdk.CfnOutput(this, 'RoleArn', {
+    new CfnOutput(this, 'RoleArn', {
       value: deploymentRole.roleArn,
       description: 'ARN of role to use in GitHub Actions',
     });
