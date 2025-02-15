@@ -9,7 +9,7 @@
   },
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && ts-node scripts/build-binaries.ts",
     "bump-version": "npm run build && npm version patch -m 'Updated version to %s [skip ci]'",
     "test": "jest",
     "generate-swagger": "node -r ts-node/register bin/generate-swagger.js",
@@ -58,7 +58,7 @@
     "typescript": "^5.0.0"
   },
   "files": [
-    "bin",
+    "bin/*.js",
     "dist"
   ]
 }
