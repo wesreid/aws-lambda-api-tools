@@ -1,7 +1,6 @@
 import { App, Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
-import { OpenIdConnectProvider, Role, WebIdentityPrincipal, ManagedPolicy, CfnOIDCProvider } from 'aws-cdk-lib/aws-iam';
+import { Role, WebIdentityPrincipal, ManagedPolicy, CfnOIDCProvider } from 'aws-cdk-lib/aws-iam';
 import { execSync } from 'child_process';
-import { join } from 'path';
 
 console.log('Starting GitHub OIDC IAM setup...');
 
