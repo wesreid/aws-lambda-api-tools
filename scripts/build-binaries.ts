@@ -1,6 +1,10 @@
 import { build } from 'esbuild';
 import { chmod } from 'fs/promises';
 import { join } from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 async function buildBinary() {
   const files = [
@@ -33,6 +37,17 @@ async function buildBinary() {
     });
 
     await chmod(outFile, '755');
+  }
+
+  // Run tsc command
+  try {
+    const { stdout, stderr } = await execAsync('tsc');
+    console.log('TypeScript compilation output:', stdout);
+    if (stderr) {
+      console.error('TypeScript compilation errors:', stderr);
+    }
+  } catch (error) {
+    console.error('Error running tsc:', error);
   }
 }
 
