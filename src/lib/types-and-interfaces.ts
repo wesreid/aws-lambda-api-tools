@@ -1,4 +1,4 @@
-import { APIGatewayProxyEventV2 } from 'aws-lambda';
+import { APIGatewayProxyEvent, APIGatewayProxyEventV2 } from 'aws-lambda';
 import { Schema } from 'joi';
 import * as swaggerTypes from './swagger-specification-types';
 
@@ -23,7 +23,7 @@ export type RouteArguments = {
   body?: any;
   query?: any;
   form?: any;
-  rawEvent?: APIGatewayProxyEventV2;
+  rawEvent?: APIGatewayProxyEventV2 | APIGatewayProxyEvent;
   routeData?: any;
 };
 

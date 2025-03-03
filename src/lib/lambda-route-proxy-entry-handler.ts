@@ -1,5 +1,5 @@
 
-import { APIGatewayProxyEventV2 } from 'aws-lambda';
+import { APIGatewayEvent, APIGatewayProxyEvent, APIGatewayProxyEventV2 } from 'aws-lambda';
 import { CustomError } from './custom-error';
 import { RouteConfig, ConfigRouteEntry, RouteArguments, RouteModule } from './types-and-interfaces';
 import { authorizeRoute } from './authorization-helper';
@@ -25,6 +25,14 @@ export const getRouteModule = (config: RouteConfig, method: string, path: string
   return routeModule;
 };
 
+interface RouteEvent {
+  routeKey: string;
+  queryStringParameters: { [key: string]: string | undefined };
+  pathParameters: { [key: string]: string | undefined };
+  body: string | undefined | null;
+  isBase64Encoded: boolean;
+}
+
 export const getRouteModuleResult = async ({ routeChain }: RouteModule, incoming: RouteArguments): Promise<any> => {
   let returnValue = incoming;
   for (const chainFn of routeChain) {
@@ -33,22 +41,82 @@ export const getRouteModuleResult = async ({ routeChain }: RouteModule, incoming
   return returnValue;
 };
 
+function pathToRegex(path: string): string {
+  // Convert route path to regex pattern
+  return path
+    .replace(/\//g, '\\/') // Escape forward slashes
+    .replace(/{([^}]+)}/g, '(?<$1>[^/]+)'); // Convert {param} to named capture groups
+}
+
+const v2ApiGatewayEvent = (event: APIGatewayProxyEventV2): RouteEvent => {
+  return {
+    routeKey: event.routeKey,
+    queryStringParameters: event.queryStringParameters?? ({} as RouteEvent['queryStringParameters']),
+    pathParameters: event.pathParameters ?? {},
+    body: event.body,
+    isBase64Encoded: event.isBase64Encoded,
+  };
+}
+
+const v1ApiGatewayEvent = (event: APIGatewayProxyEvent, config: RouteConfig): RouteEvent => {
+  const routeConfig = getRouteConfigByPath(event.resource, event.httpMethod, config.routes);
+  return {
+    routeKey: `${event.httpMethod} ${routeConfig.path}`,
+    queryStringParameters: event.queryStringParameters ?? {},
+    pathParameters: routeConfig.params ?? {},
+    body: event.body,
+    isBase64Encoded: event.isBase64Encoded,
+  };
+}
+
+export function getRouteConfigByPath(
+  eventPath: string,
+  method: string,
+  configs: ConfigRouteEntry[],
+): ConfigRouteEntry & { params?: { [key: string]: string } } {
+  const normalizedPath = eventPath.replace(/^\//, ''); // Remove leading slash
+  for (const config of configs) {
+    const pattern = pathToRegex(config.path);
+    const regex = new RegExp(`^${pattern}$`);
+    const match = regex.exec(normalizedPath);
+
+    if (match && method === config.method) {
+      const params = match.groups || {};
+      return { ...config, params };
+    }
+
+    if (regex.test(eventPath) && config.method === method) {
+      return config;
+    }
+  }
+
+  throw new CustomError(JSON.stringify({ message: 'path no found' }), 400);
+}
+
 export const lambdaRouteProxyEntryHandler = (config: RouteConfig, availableRouteModules: { [key: string]: any }) =>
-  async (event: APIGatewayProxyEventV2) => {
+  async (event: APIGatewayProxyEventV2 | APIGatewayProxyEvent | APIGatewayEvent) => {
     console.log(`Event Data: ${JSON.stringify(event)}`);
+    const isV2 = (event as APIGatewayProxyEventV2).version === '2.0';
+
+    const isProxied = !isV2 && event.hasOwnProperty('requestContext');
+
+    const newEvent = isV2? v2ApiGatewayEvent(event as APIGatewayProxyEventV2): v1ApiGatewayEvent(event as APIGatewayProxyEvent, config);
+
     const {
       routeKey,
       queryStringParameters,
       pathParameters,
       body,
       isBase64Encoded,
-    } = event;
-    let retVal = {};
+    } = newEvent;
+    
+    let retVal: any = {};
     try {
       const [method = '', path = ''] = routeKey.split(' ');
       if (shouldAuthorizeRoute(config, getRouteConfigEntry(config, method, path))) {
         await authorizeRoute(event);
       }
+
       const routeModule = getRouteModule(config, method, path, availableRouteModules);
 
       console.log(`isBase64Encoded: ${isBase64Encoded}`);
@@ -64,6 +132,29 @@ export const lambdaRouteProxyEntryHandler = (config: RouteConfig, availableRoute
         body: body ? decodedBody || JSON.parse(body) : undefined,
         rawEvent: event,
       });
+
+      if(isProxied) {
+        if(retVal.statusCode && !retVal.body) {
+          console.log('body must be included when status code is set', retVal);
+          throw new CustomError('No body found', 500);
+        } else if(retVal.statusCode && retVal.body) {
+          retVal = {
+            ...retVal,
+            isBase64Encoded: false,
+            headers: {
+              'Content-Type': 'application/json',
+              ...retVal.headers??{}
+            },
+            body: typeof retVal.body === 'object' ? JSON.stringify(retVal.body): retVal.body
+          };
+        } else {
+          retVal = {
+            statusCode: 200,
+            body: JSON.stringify(retVal),
+            'Content-Type': 'application/json',
+          }
+        }
+      }
     } catch (error: any) {
       console.error(JSON.stringify({ error, stack: error.stack }));
       if (error instanceof CustomError) {

@@ -1,10 +1,13 @@
+import { APIGatewayProxyEvent, APIGatewayProxyEventV2 } from 'aws-lambda';
 import {
   RouteArguments,
   RouteModule,
 } from './types-and-interfaces';
 
 const handler = async (input: RouteArguments): Promise<any> => {
-  if (input.rawEvent!.requestContext.http.method === 'OPTIONS') {
+  const v1Method = (input.rawEvent as APIGatewayProxyEvent).requestContext.httpMethod;
+  const v2Method = (input.rawEvent as APIGatewayProxyEventV2).requestContext.http.method;
+  if (v1Method === 'OPTIONS' || v2Method === 'OPTIONS') {
     return {
       statusCode: 200, 
       headers: {

@@ -1,7 +1,7 @@
-import { APIGatewayProxyEventV2 } from "aws-lambda";
+import { APIGatewayProxyEvent, APIGatewayProxyEventV2 } from "aws-lambda";
 // import { CustomError } from './custom-error';
 
-export const authorizeRoute = (event: APIGatewayProxyEventV2) => {
+export const authorizeRoute = (event: APIGatewayProxyEventV2|APIGatewayProxyEvent) => {
   // extract token
   const token: string = event.headers!.authorization as string;
   if (!token) {
