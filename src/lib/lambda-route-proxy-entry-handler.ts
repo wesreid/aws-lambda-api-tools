@@ -33,9 +33,43 @@ export const getRouteModuleResult = async ({ routeChain }: RouteModule, incoming
   return returnValue;
 };
 
-export const lambdaRouteProxyEntryHandler = (config: RouteConfig, availableRouteModules: { [key: string]: any }) =>
+function pathToRegex(path: string): string {
+  // Convert route path to regex pattern
+  return path
+    .replace(/\//g, '\\/') // Escape forward slashes
+    .replace(/{([^}]+)}/g, '(?<$1>[^/]+)'); // Convert {param} to named capture groups
+}
+
+export function getRouteConfigByPath(
+  eventPath: string,
+  configs: ConfigRouteEntry[],
+): ConfigRouteEntry & { params?: { [key: string]: string } } {
+  const normalizedPath = eventPath.replace(/^\//, ''); // Remove leading slash
+  for (const config of configs) {
+    const pattern = pathToRegex(config.path);
+    const regex = new RegExp(`^${pattern}$`);
+    const match = regex.exec(normalizedPath);
+    if (match) {
+      const params = match.groups || {};
+      return { ...config, params };
+    }
+    if (regex.test(eventPath)) {
+      return config;
+    }
+  }
+
+  throw new CustomError(JSON.stringify({ message: 'path no found' }), 400);
+}
+
+export const lambdaRouteProxyEntryHandler = (config: RouteConfig, availableRouteModules: { [key: string]: any }, options?: {proxy: boolean}) =>
   async (event: APIGatewayProxyEventV2) => {
     console.log(`Event Data: ${JSON.stringify(event)}`);
+    if(options?.proxy) {
+      const routeConfig = getRouteConfigByPath(event.requestContext.http.path, config.routes);
+      event.routeKey = `${event.requestContext.http.method} ${routeConfig.path}`;
+      event.pathParameters = routeConfig.params;
+    }
+
     const {
       routeKey,
       queryStringParameters,
@@ -43,7 +77,7 @@ export const lambdaRouteProxyEntryHandler = (config: RouteConfig, availableRoute
       body,
       isBase64Encoded,
     } = event;
-    let retVal = {};
+    let retVal: any = {};
     try {
       const [method = '', path = ''] = routeKey.split(' ');
       if (shouldAuthorizeRoute(config, getRouteConfigEntry(config, method, path))) {
@@ -64,6 +98,29 @@ export const lambdaRouteProxyEntryHandler = (config: RouteConfig, availableRoute
         body: body ? decodedBody || JSON.parse(body) : undefined,
         rawEvent: event,
       });
+
+      if(options?.proxy) {
+        if(retVal.statusCode && !retVal.body) {
+          console.log('body must be included when status code is set', retVal);
+          throw new CustomError('No body found', 500);
+        } else if(retVal.statusCode && retVal.body) {
+          retVal = {
+            ...retVal,
+            isBase64Encoded: false,
+            headers: {
+              'Content-Type': 'application/json',
+              ...retVal.headers??{}
+            },
+            body: typeof retVal.body === 'object' ? JSON.stringify(retVal.body): retVal.body
+          };
+        } else {
+          retVal = {
+            statusCode: 200,
+            body: JSON.stringify(retVal),
+            'Content-Type': 'application/json',
+          }
+        }
+      }
     } catch (error: any) {
       console.error(JSON.stringify({ error, stack: error.stack }));
       if (error instanceof CustomError) {
