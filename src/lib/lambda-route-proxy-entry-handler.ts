@@ -61,10 +61,11 @@ export function getRouteConfigByPath(
   throw new CustomError(JSON.stringify({ message: 'path no found' }), 400);
 }
 
-export const lambdaRouteProxyEntryHandler = (config: RouteConfig, availableRouteModules: { [key: string]: any }, options?: {proxy: boolean}) =>
+export const lambdaRouteProxyEntryHandler = (config: RouteConfig, availableRouteModules: { [key: string]: any }) =>
   async (event: APIGatewayProxyEventV2) => {
     console.log(`Event Data: ${JSON.stringify(event)}`);
-    if(options?.proxy) {
+    const isProxied = "httpMethod" in event && "requestContext" in event
+    if(isProxied) {
       const routeConfig = getRouteConfigByPath(event.requestContext.http.path, config.routes);
       event.routeKey = `${event.requestContext.http.method} ${routeConfig.path}`;
       event.pathParameters = routeConfig.params;
@@ -99,7 +100,7 @@ export const lambdaRouteProxyEntryHandler = (config: RouteConfig, availableRoute
         rawEvent: event,
       });
 
-      if(options?.proxy) {
+      if(isProxied) {
         if(retVal.statusCode && !retVal.body) {
           console.log('body must be included when status code is set', retVal);
           throw new CustomError('No body found', 500);
