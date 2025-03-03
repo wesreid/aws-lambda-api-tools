@@ -59,7 +59,7 @@ const v2ApiGatewayEvent = (event: APIGatewayProxyEventV2): RouteEvent => {
 }
 
 const v1ApiGatewayEvent = (event: APIGatewayProxyEvent, config: RouteConfig): RouteEvent => {
-  const routeConfig = getRouteConfigByPath(event.resource, event.httpMethod, config.routes);
+  const routeConfig = getRouteConfigByPath(event.path, event.httpMethod, config.routes);
   return {
     routeKey: `${event.httpMethod} ${routeConfig.path}`,
     queryStringParameters: event.queryStringParameters ?? {},
