@@ -74,6 +74,7 @@ export function getRouteConfigByPath(
   method: string,
   configs: ConfigRouteEntry[],
 ): ConfigRouteEntry & { params?: { [key: string]: string } } {
+  eventPath = eventPath.replace(/\?.*$/, ''); // Remove query string
   const normalizedPath = eventPath.replace(/^\//, ''); // Remove leading slash
   for (const config of configs) {
     const pattern = pathToRegex(config.path);
