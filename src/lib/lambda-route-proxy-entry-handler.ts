@@ -193,6 +193,12 @@ export const lambdaRouteProxyEntryHandler =
             ...retVal,
             isBase64Encoded: false,
             headers: {
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Methods":
+                "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+              "Access-Control-Allow-Headers":
+                "Content-Type, Authorization, X-Amz-Date, X-Api-Key, X-Amz-Security-Token",
+              "Access-Control-Allow-Credentials": "true",
               "Content-Type": "application/json",
               ...(retVal.headers ?? {}),
             },
@@ -201,13 +207,13 @@ export const lambdaRouteProxyEntryHandler =
                 ? JSON.stringify(retVal.body)
                 : retVal.body,
           };
-        } else {
-          retVal = {
-            statusCode: 200,
-            body: JSON.stringify(retVal),
-            "Content-Type": "application/json",
-          };
         }
+      } else {
+        retVal = {
+          statusCode: 200,
+          body: JSON.stringify(retVal),
+          "Content-Type": "application/json",
+        };
       }
     } catch (error: any) {
       console.error(JSON.stringify({ error, stack: error.stack }));
@@ -218,7 +224,8 @@ export const lambdaRouteProxyEntryHandler =
       let statusCode = 500;
 
       if (isProxied) {
-        const isOptions = (event.requestContext as any).httpMethod === "OPTIONS";
+        const isOptions =
+          (event.requestContext as any).httpMethod === "OPTIONS";
         if (isOptions) {
           statusCode = 200;
         } else {
