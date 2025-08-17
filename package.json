@@ -27,7 +27,6 @@
   "license": "UNLICENSED",
   "devDependencies": {
     "@types/atob": "^2.1.4",
-    "@types/aws-lambda": "^8.10.146",
     "@types/formidable": "^1.2.8",
     "@types/jest": "^29.5.14",
     "@types/minimist": "^1.2.5",
@@ -43,7 +42,7 @@
   },
   "dependencies": {
     "@types/atob": "^2.1.2",
-    "@types/aws-lambda": "^8.10.81",
+    "@types/aws-lambda": "^8.10.152",
     "@types/formidable": "^1.2.3",
     "@types/js-yaml": "^4.0.5",
     "@types/lodash": "^4.14.182",
