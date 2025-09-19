@@ -110,7 +110,10 @@ function validateSecurityConfig(config: SecurityConfig): void {
     const { allowOrigin, allowCredentials } = config.cors;
     
     // Check for dangerous wildcard with credentials
-    if (allowCredentials && (allowOrigin === '*' || (Array.isArray(allowOrigin) && allowOrigin.includes('*')))) {
+    const hasWildcard = allowOrigin === '*' || 
+      (Array.isArray(allowOrigin) && allowOrigin.some(origin => origin === '*'));
+    
+    if (allowCredentials && hasWildcard) {
       throw new Error(
         'SECURITY ERROR: Cannot use Access-Control-Allow-Credentials: true with Access-Control-Allow-Origin: *. ' +
         'This is a security vulnerability. Specify explicit origins instead.'
@@ -118,7 +121,7 @@ function validateSecurityConfig(config: SecurityConfig): void {
     }
 
     // Warn about wildcard origins
-    if (allowOrigin === '*' || (Array.isArray(allowOrigin) && allowOrigin.includes('*'))) {
+    if (hasWildcard) {
       console.warn(
         'WARNING: Using wildcard (*) for Access-Control-Allow-Origin. ' +
         'Consider specifying explicit origins for better security.'
@@ -170,7 +173,7 @@ function isOriginAllowed(
     return true;
   }
   
-  // Handle string or array of strings/regexes
+  // Handle different allowOrigin types
   if (Array.isArray(allowOrigin)) {
     for (const origin of allowOrigin) {
       if (typeof origin === 'string' && origin === requestOrigin) {
