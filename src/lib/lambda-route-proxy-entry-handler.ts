@@ -9,8 +9,14 @@ import {
   ConfigRouteEntry,
   RouteArguments,
   RouteModule,
+  SecurityConfig,
 } from "./types-and-interfaces";
 import { authorizeRoute } from "./authorization-helper";
+import { 
+  loadSecurityConfig, 
+  generateCorsHeaders, 
+  generateJwtRotationHeaders 
+} from "./security-config-loader";
 
 const getRouteConfigEntry = (
   config: RouteConfig,
@@ -136,6 +142,8 @@ export const lambdaRouteProxyEntryHandler =
   async (
     event: APIGatewayProxyEventV2 | APIGatewayProxyEvent | APIGatewayEvent
   ) => {
+    // Load security configuration
+    const securityConfig = config.security || loadSecurityConfig();
     console.log(`Event Data: ${JSON.stringify(event)}`);
     const isV2 = (event as APIGatewayProxyEventV2).version === "2.0";
 
@@ -177,29 +185,38 @@ export const lambdaRouteProxyEntryHandler =
       console.log(`decodedBody:
       ${decodedBody}`);
 
-      retVal = await getRouteModuleResult(routeModule, {
+      const routeArgs: RouteArguments = {
         query: queryStringParameters,
         params: pathParameters,
         body: body ? decodedBody || JSON.parse(body) : undefined,
         rawEvent: event,
-      });
+      };
+      
+      retVal = await getRouteModuleResult(routeModule, routeArgs);
 
       if (isProxied) {
         if (retVal.statusCode && !retVal.body) {
           console.log("body must be included when status code is set", retVal);
           throw new CustomError("No body found", 500);
         } else if (retVal.statusCode && retVal.body) {
+          // Generate secure headers based on configuration
+          const requestOrigin = event.headers?.origin || event.headers?.Origin;
+          const corsHeaders = generateCorsHeaders(securityConfig, requestOrigin);
+          const jwtRotationHeaders = generateJwtRotationHeaders(securityConfig, routeArgs.routeData);
+          
           retVal = {
             ...retVal,
             isBase64Encoded: false,
             headers: {
-              "Access-Control-Allow-Origin": "*",
-              "Access-Control-Allow-Methods":
-                "GET, POST, PUT, DELETE, PATCH, OPTIONS",
-              "Access-Control-Allow-Headers":
-                "Content-Type, Authorization, X-Amz-Date, X-Api-Key, X-Amz-Security-Token",
-              "Access-Control-Allow-Credentials": "true",
-              "Content-Type": "application/json",
+              // 1. Default security headers from config (lowest priority)
+              ...securityConfig.defaultHeaders,
+              // 2. CORS headers (only if origin is allowed)
+              ...corsHeaders,
+              // 3. JWT rotation headers (if needed)
+              ...jwtRotationHeaders,
+              // 4. Middleware-provided headers (higher priority)
+              ...(routeArgs.responseHeaders ?? {}),
+              // 5. Handler-provided headers (highest priority - can override everything)
               ...(retVal.headers ?? {}),
             },
             body:
