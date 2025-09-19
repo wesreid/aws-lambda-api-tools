@@ -18,7 +18,8 @@ The framework looks for security configuration in the following order:
 ```typescript
 interface SecurityConfig {
   cors?: {
-    allowOrigin?: string | string[];
+    allowOrigin?: string | string[] | RegExp | RegExp[];
+    allowOriginPatterns?: string[]; // Regex patterns as strings for JSON config
     allowMethods?: string[];
     allowHeaders?: string[];
     allowCredentials?: boolean;
@@ -31,6 +32,64 @@ interface SecurityConfig {
     rotationReasonHeader?: string;
   };
 }
+```
+
+## 🆕 Dynamic Origin Matching with Regex
+
+The framework now supports regex patterns for dynamic subdomain matching, perfect for multi-tenant applications:
+
+### How Browser CORS Works with Regex
+1. **Browser sends request** from `https://abc.example.dev`
+2. **API matches regex** `^https://[a-zA-Z0-9-]+\.example\.dev$`
+3. **API responds** with `Access-Control-Allow-Origin: https://abc.example.dev` (exact origin)
+4. **Browser allows request** because response origin matches request origin
+
+### Configuration Examples
+
+**JSON Configuration (Recommended):**
+```json
+{
+  "cors": {
+    "allowOriginPatterns": [
+      "^https://[a-zA-Z0-9-]+\\.example\\.dev$",
+      "^https://[a-zA-Z0-9-]+\\.example\\.app$",
+      "^http://localhost:[0-9]+$"
+    ],
+    "allowOrigin": [
+      "https://example.app",
+      "https://admin.example.app"
+    ]
+  }
+}
+```
+
+**JavaScript Configuration:**
+```javascript
+module.exports = {
+  cors: {
+    allowOrigin: [
+      "https://example.app",
+      /^https:\/\/[a-zA-Z0-9-]+\.example\.dev$/,
+      /^http:\/\/localhost:[0-9]+$/
+    ]
+  }
+};
+```
+
+### Common Regex Patterns
+
+```javascript
+// Any subdomain of example.dev
+"^https://[a-zA-Z0-9-]+\\.example\\.dev$"
+
+// Any localhost port
+"^http://localhost:[0-9]+$"
+
+// Specific subdomain pattern (e.g., S1401, T2502)
+"^https://[ST][0-9]{4}\\.example\\.dev$"
+
+// Multiple subdomains
+"^https://(api|app|admin)\\.[a-zA-Z0-9-]+\\.example\\.dev$"
 ```
 
 ## Example Configuration

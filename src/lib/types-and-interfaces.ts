@@ -15,7 +15,8 @@ export type ConfigRouteEntry = {
 
 export type SecurityConfig = {
   cors?: {
-    allowOrigin?: string | string[];
+    allowOrigin?: string | string[] | RegExp | RegExp[];
+    allowOriginPatterns?: string[]; // Regex patterns as strings for JSON config
     allowMethods?: string[];
     allowHeaders?: string[];
     allowCredentials?: boolean;

@@ -154,29 +154,73 @@ function validateSecurityConfig(config: SecurityConfig): void {
 }
 
 /**
+ * Check if an origin matches allowed origins (including regex patterns)
+ */
+function isOriginAllowed(
+  requestOrigin: string,
+  allowOrigin?: string | string[] | RegExp | RegExp[],
+  allowOriginPatterns?: string[]
+): boolean {
+  if (!allowOrigin && !allowOriginPatterns) {
+    return false;
+  }
+  
+  // Handle wildcard
+  if (allowOrigin === '*') {
+    return true;
+  }
+  
+  // Handle string or array of strings/regexes
+  if (Array.isArray(allowOrigin)) {
+    for (const origin of allowOrigin) {
+      if (typeof origin === 'string' && origin === requestOrigin) {
+        return true;
+      }
+      if (origin instanceof RegExp && origin.test(requestOrigin)) {
+        return true;
+      }
+    }
+  } else if (typeof allowOrigin === 'string') {
+    return allowOrigin === requestOrigin;
+  } else if (allowOrigin instanceof RegExp) {
+    return allowOrigin.test(requestOrigin);
+  }
+  
+  // Handle regex patterns from JSON config (as strings)
+  if (allowOriginPatterns && allowOriginPatterns.length > 0) {
+    for (const pattern of allowOriginPatterns) {
+      try {
+        const regex = new RegExp(pattern);
+        if (regex.test(requestOrigin)) {
+          return true;
+        }
+      } catch (error) {
+        console.warn(`Invalid regex pattern in allowOriginPatterns: ${pattern}`, error);
+      }
+    }
+  }
+  
+  return false;
+}
+
+/**
  * Generate CORS headers based on configuration and request origin
  */
 export function generateCorsHeaders(config: SecurityConfig, requestOrigin?: string): Record<string, string> {
   const headers: Record<string, string> = {};
   
-  if (!config.cors) return headers;
-
-  const { allowOrigin, allowMethods, allowHeaders, allowCredentials, maxAge } = config.cors;
-
-  // Handle origin
-  if (allowOrigin === '*') {
-    headers['Access-Control-Allow-Origin'] = '*';
-  } else if (Array.isArray(allowOrigin)) {
-    if (requestOrigin && allowOrigin.includes(requestOrigin)) {
-      headers['Access-Control-Allow-Origin'] = requestOrigin;
-    }
-    // If origin not allowed, don't set the header (request will be blocked)
-  } else if (typeof allowOrigin === 'string') {
-    headers['Access-Control-Allow-Origin'] = allowOrigin;
+  if (!config.cors || !requestOrigin) {
+    return headers;
   }
 
-  // Only set other CORS headers if origin is allowed
-  if (headers['Access-Control-Allow-Origin']) {
+  const { allowOrigin, allowOriginPatterns, allowMethods, allowHeaders, allowCredentials, maxAge } = config.cors;
+
+  // Check if the request origin is allowed
+  if (isOriginAllowed(requestOrigin, allowOrigin, allowOriginPatterns)) {
+    // IMPORTANT: Always return the exact request origin, never the pattern
+    headers['Access-Control-Allow-Origin'] = requestOrigin;
+    
+    // Add other CORS headers only if origin is allowed
     if (allowMethods && allowMethods.length > 0) {
       headers['Access-Control-Allow-Methods'] = allowMethods.join(', ');
     }
