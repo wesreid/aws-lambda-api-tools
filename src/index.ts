@@ -14,6 +14,7 @@ export type {
   ConfigRouteEntry,
   RouteConfig,
   Permission,
+  SecurityConfig,
 } from './lib/types-and-interfaces';
 
 export { CustomError } from './lib/custom-error';
@@ -25,3 +26,13 @@ export { lambdaRouteProxyPathNotFound } from './lib/lambda-route-proxy-path-not-
 export { schemaValidationMiddleware } from './lib/middlewares/route-module-schema-validation-middleware';
 
 export { jwtValidationMiddleware } from './lib/middlewares/route-module-jwt-validation-middleware';
+
+export { 
+  addResponseHeader,
+  addResponseHeaders,
+  addConditionalHeader,
+  addRateLimitHeaders,
+  addCacheHeaders,
+  addSecurityHeaders,
+  addAuthHeaders,
+} from './lib/middleware-helpers';

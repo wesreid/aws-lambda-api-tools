@@ -13,9 +13,27 @@ export type ConfigRouteEntry = {
   authorizeRoute?: boolean;
 };
 
+export type SecurityConfig = {
+  cors?: {
+    allowOrigin?: string | string[] | RegExp | RegExp[];
+    allowOriginPatterns?: string[]; // Regex patterns as strings for JSON config
+    allowMethods?: string[];
+    allowHeaders?: string[];
+    allowCredentials?: boolean;
+    maxAge?: number;
+  };
+  defaultHeaders?: Record<string, string>;
+  jwtRotationHeaders?: {
+    enabled?: boolean;
+    rotationRequiredHeader?: string;
+    rotationReasonHeader?: string;
+  };
+};
+
 export type RouteConfig = {
   authorizeAllRoutes?: boolean;
   routes: Array<ConfigRouteEntry>;
+  security?: SecurityConfig;
 };
 
 export type RouteArguments = {
@@ -25,6 +43,7 @@ export type RouteArguments = {
   form?: any;
   rawEvent?: APIGatewayProxyEventV2 | APIGatewayProxyEvent;
   routeData?: any;
+  responseHeaders?: Record<string, string>; // Middleware can add headers here
 };
 
 export interface RouteSchema {
