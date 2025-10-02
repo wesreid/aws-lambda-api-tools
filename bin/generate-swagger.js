@@ -50,5 +50,6 @@ config.routes.filter(r => r.generateOpenApiDocs).forEach(r => {
 });
 fs.writeFileSync(path.join(process.cwd(), outputFile), JSON.stringify(swaggerSpec));
 console.log(JSON.stringify(swaggerSpec));
+process.exit(0);
 
 // require('../lib')(argv);
