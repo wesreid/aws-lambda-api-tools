@@ -208,6 +208,7 @@ export const lambdaRouteProxyEntryHandler =
             ...retVal,
             isBase64Encoded: false,
             headers: {
+              "Content-Type": "application/json",
               // 1. Default security headers from config (lowest priority)
               ...securityConfig.defaultHeaders,
               // 2. CORS headers (only if origin is allowed)
@@ -229,7 +230,9 @@ export const lambdaRouteProxyEntryHandler =
         retVal = {
           statusCode: 200,
           body: JSON.stringify(retVal),
-          "Content-Type": "application/json",
+          headers: {
+            "Content-Type": "application/json",
+          },
         };
       }
     } catch (error: any) {
