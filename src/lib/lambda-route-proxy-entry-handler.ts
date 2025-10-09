@@ -179,16 +179,24 @@ export const lambdaRouteProxyEntryHandler =
 
         console.log(`isBase64Encoded: ${isBase64Encoded}`);
         console.log(`body: ${body}`);
-        const decodedBody = isBase64Encoded
-          ? Buffer.from(body!, "base64").toString("utf-8")
-          : undefined;
-        console.log(`decodedBody:
-      ${decodedBody}`);
+        
+        let parsedBody = undefined;
+        if (body) {
+          if (isBase64Encoded) {
+            const decodedBody = Buffer.from(body, "base64").toString("utf-8");
+            console.log(`decodedBody: ${decodedBody}`);
+            parsedBody = JSON.parse(decodedBody);
+          } else {
+            console.log(`parsing body directly: ${body}`);
+            parsedBody = JSON.parse(body);
+          }
+        }
+        console.log(`parsedBody: ${JSON.stringify(parsedBody)}`);
 
         const routeArgs: RouteArguments = {
           query: queryStringParameters,
           params: pathParameters,
-          body: body ? decodedBody || JSON.parse(body) : undefined,
+          body: parsedBody,
           rawEvent: event,
         };
 
