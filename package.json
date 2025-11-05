@@ -1,6 +1,6 @@
 {
   "name": "aws-lambda-api-tools",
-  "version": "0.1.28",
+  "version": "0.1.29",
   "description": "",
   "main": "dist/index.js",
   "bin": {
