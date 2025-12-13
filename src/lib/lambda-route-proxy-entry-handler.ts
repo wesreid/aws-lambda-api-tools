@@ -277,7 +277,7 @@ export const lambdaRouteProxyEntryHandler =
         }
         if (error instanceof CustomError) {
           retVal = {
-            statusCode,
+            statusCode: error.httpStatusCode || error._httpStatusCode || 500,
             headers,
             body: error.message,
           };
