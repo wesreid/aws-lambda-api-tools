@@ -204,27 +204,27 @@ function showDiff(existing: string[], final: string[], requested: string[], mode
 const app = new App();
 
 class GithubActionsIamStack extends Stack {
-  constructor(scope: App, id: string, props?: StackProps & { createOidcProvider?: boolean; finalRepos: string[] }) {
+  constructor(scope: App, id: string, props?: StackProps & { finalRepos: string[] }) {
     super(scope, id, props);
 
-    const { finalRepos = [], createOidcProvider = false } = props || {};
+    const { finalRepos = [] } = props || {};
 
     // Reference existing OIDC provider or create new one
     const accountId = Stack.of(this).account;
     const githubOidcProviderArn = `arn:aws:iam::${accountId}:oidc-provider/token.actions.githubusercontent.com`;
     
-    // Create OIDC provider only if it doesn't exist
-    if (createOidcProvider) {
-      console.log('\n🔐 Creating new OIDC Provider...');
-      new CfnOIDCProvider(this, "GithubOidcProvider", {
-        url: "https://token.actions.githubusercontent.com",
-        clientIdList: ["sts.amazonaws.com"],
-        thumbprintList: [
-          "6938fd4d98bab03faadb97b34396831e3780aea1",
-          "1c58a3a8518e8759bf075b76b750d4f2df264fcd"
-        ]
-      });
-    }
+    // Always include OIDC provider in the stack template
+    // This ensures CloudFormation won't delete it on subsequent updates
+    // CloudFormation will handle idempotency (no-op if already exists with same config)
+    console.log('\n🔐 Including OIDC Provider in stack...');
+    new CfnOIDCProvider(this, "GithubOidcProvider", {
+      url: "https://token.actions.githubusercontent.com",
+      clientIdList: ["sts.amazonaws.com"],
+      thumbprintList: [
+        "6938fd4d98bab03faadb97b34396831e3780aea1",
+        "1c58a3a8518e8759bf075b76b750d4f2df264fcd"
+      ]
+    });
 
     console.log(`\n👤 Creating/Updating IAM Role: ${roleName}...`);
     const deploymentRole = new Role(this, "GithubActionsRole", {
@@ -327,7 +327,6 @@ async function main() {
   
   // Create/update stack
   new GithubActionsIamStack(app, stackName, {
-    createOidcProvider: !oidcExists,
     finalRepos: finalRepos
   });
 
