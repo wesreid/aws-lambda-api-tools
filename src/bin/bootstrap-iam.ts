@@ -8,17 +8,17 @@ console.log('🚀 Starting GitHub OIDC IAM setup...\n');
 
 // Parse command line arguments
 const args = process.argv.slice(2);
-const repoArgs = args.filter(t => t.startsWith("--repo=")).map(t => t.split("=")[1]);
-const removeRepoArgs = args.filter(t => t.startsWith("--remove-repo=")).map(t => t.split("=")[1]);
+const repoArgs = args.filter(t => t.startsWith("--repo=")).map(t => t.split("=")[1]).filter((v): v is string => v !== undefined);
+const removeRepoArgs = args.filter(t => t.startsWith("--remove-repo=")).map(t => t.split("=")[1]).filter((v): v is string => v !== undefined);
 const policyArg = args.find(t => t.startsWith("--policy="));
 const modeArg = args.find(t => t.startsWith("--mode="));
 const yesArg = args.find(t => t === "--yes");
 const stackNameArg = args.find(t => t.startsWith("--stack-name="));
 const roleNameArg = args.find(t => t.startsWith("--role-name="));
 
-const mode = modeArg ? modeArg.split("=")[1] as 'merge' | 'replace' | 'remove' | 'mixed' | 'list' : 'replace';
-const stackName = stackNameArg ? stackNameArg.split("=")[1] : 'GithubActionsIam';
-const roleName = roleNameArg ? roleNameArg.split("=")[1] : 'GithubActionsRole';
+const mode = modeArg ? (modeArg.split("=")[1] as 'merge' | 'replace' | 'remove' | 'mixed' | 'list') ?? 'replace' : 'replace';
+const stackName: string = stackNameArg ? stackNameArg.split("=")[1] ?? 'GithubActionsIam' : 'GithubActionsIam';
+const roleName: string = roleNameArg ? roleNameArg.split("=")[1] ?? 'GithubActionsRole' : 'GithubActionsRole';
 
 // List mode doesn't require repos
 if (mode !== 'list' && repoArgs.length === 0 && removeRepoArgs.length === 0) {
@@ -34,9 +34,9 @@ if (mode !== 'list' && repoArgs.length === 0 && removeRepoArgs.length === 0) {
   process.exit(1);
 }
 
-const requestedRepos = repoArgs;
-const reposToRemove = removeRepoArgs;
-const policyName = policyArg ? policyArg.split("=")[1] : "AdministratorAccess";
+const requestedRepos: string[] = repoArgs;
+const reposToRemove: string[] = removeRepoArgs;
+const policyName: string = policyArg ? policyArg.split("=")[1] ?? "AdministratorAccess" : "AdministratorAccess";
 const skipConfirmation = yesArg !== undefined;
 
 // Utility function to prompt for confirmation

@@ -16,11 +16,14 @@ program.command('create-gha-iam-stack')
   .option('--stack-name <name>', 'CloudFormation stack name', 'GithubActionsIam')
   .option('--role-name <name>', 'IAM role name', 'GithubActionsRole')
   .action(async (options) => {
+    const nodeExe = process.argv[0] ?? 'node';
+    const scriptPath = process.argv[1] ?? '';
+    
     // List mode - no repos required
     if (options.mode === 'list') {
       process.argv = [
-        process.argv[0],
-        process.argv[1],
+        nodeExe,
+        scriptPath,
         '--mode=list',
         `--stack-name=${options.stackName}`,
         `--role-name=${options.roleName}`,
@@ -32,8 +35,8 @@ program.command('create-gha-iam-stack')
     // Mixed mode - both --repo and --remove-repo specified
     if (options.repo.length > 0 && options.removeRepo.length > 0) {
       process.argv = [
-        process.argv[0],
-        process.argv[1],
+        nodeExe,
+        scriptPath,
         ...options.repo.map((repo: string) => `--repo=${repo}`),
         ...options.removeRepo.map((repo: string) => `--remove-repo=${repo}`),
         `--policy=${options.policy}`,
@@ -49,8 +52,8 @@ program.command('create-gha-iam-stack')
     // Pure remove mode - only --remove-repo specified
     if (options.removeRepo.length > 0) {
       process.argv = [
-        process.argv[0],
-        process.argv[1],
+        nodeExe,
+        scriptPath,
         ...options.removeRepo.map((repo: string) => `--remove-repo=${repo}`),
         `--policy=${options.policy}`,
         '--mode=remove',
@@ -75,8 +78,8 @@ program.command('create-gha-iam-stack')
     
     // Convert Commander options to argv format for bootstrap script
     process.argv = [
-      process.argv[0],
-      process.argv[1],
+      nodeExe,
+      scriptPath,
       ...options.repo.map((repo: string) => `--repo=${repo}`),
       `--policy=${options.policy}`,
       `--mode=${options.mode}`,
