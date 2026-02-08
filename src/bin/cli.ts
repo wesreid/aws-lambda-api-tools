@@ -15,6 +15,7 @@ program.command('create-gha-iam-stack')
   .option('--yes', 'Skip confirmation prompt', false)
   .option('--stack-name <name>', 'CloudFormation stack name', 'GithubActionsIam')
   .option('--role-name <name>', 'IAM role name', 'GithubActionsRole')
+  .option('--max-session-duration <seconds>', 'Max session duration in seconds (default: 3600, max: 43200)', '3600')
   .action(async (options) => {
     const nodeExe = process.argv[0] ?? 'node';
     const scriptPath = process.argv[1] ?? '';
@@ -43,6 +44,7 @@ program.command('create-gha-iam-stack')
         '--mode=mixed',
         `--stack-name=${options.stackName}`,
         `--role-name=${options.roleName}`,
+        `--max-session-duration=${options.maxSessionDuration}`,
         ...(options.yes ? ['--yes'] : [])
       ];
       require(join(__dirname, 'bootstrap-iam.js'));
@@ -59,6 +61,7 @@ program.command('create-gha-iam-stack')
         '--mode=remove',
         `--stack-name=${options.stackName}`,
         `--role-name=${options.roleName}`,
+        `--max-session-duration=${options.maxSessionDuration}`,
         ...(options.yes ? ['--yes'] : [])
       ];
       require(join(__dirname, 'bootstrap-iam.js'));
@@ -85,6 +88,7 @@ program.command('create-gha-iam-stack')
       `--mode=${options.mode}`,
       `--stack-name=${options.stackName}`,
       `--role-name=${options.roleName}`,
+      `--max-session-duration=${options.maxSessionDuration}`,
       ...(options.yes ? ['--yes'] : [])
     ];
     require(join(__dirname, 'bootstrap-iam.js'));

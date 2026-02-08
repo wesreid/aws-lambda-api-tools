@@ -1,4 +1,4 @@
-import { App, Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
+import { App, Stack, StackProps, CfnOutput, Duration } from 'aws-cdk-lib';
 import { Role, WebIdentityPrincipal, ManagedPolicy, CfnOIDCProvider } from 'aws-cdk-lib/aws-iam';
 import { execSync } from 'child_process';
 import { IAMClient, ListOpenIDConnectProvidersCommand, GetRoleCommand, NoSuchEntityException } from '@aws-sdk/client-iam';
@@ -15,10 +15,12 @@ const modeArg = args.find(t => t.startsWith("--mode="));
 const yesArg = args.find(t => t === "--yes");
 const stackNameArg = args.find(t => t.startsWith("--stack-name="));
 const roleNameArg = args.find(t => t.startsWith("--role-name="));
+const maxSessionArg = args.find(t => t.startsWith("--max-session-duration="));
 
 const mode = modeArg ? (modeArg.split("=")[1] as 'merge' | 'replace' | 'remove' | 'mixed' | 'list') ?? 'replace' : 'replace';
 const stackName: string = stackNameArg ? stackNameArg.split("=")[1] ?? 'GithubActionsIam' : 'GithubActionsIam';
 const roleName: string = roleNameArg ? roleNameArg.split("=")[1] ?? 'GithubActionsRole' : 'GithubActionsRole';
+const maxSessionDurationSeconds: number = maxSessionArg ? parseInt(maxSessionArg.split("=")[1] ?? '3600', 10) : 3600;
 
 // List mode doesn't require repos
 if (mode !== 'list' && repoArgs.length === 0 && removeRepoArgs.length === 0) {
@@ -227,8 +229,10 @@ class GithubActionsIamStack extends Stack {
     });
 
     console.log(`\n👤 Creating/Updating IAM Role: ${roleName}...`);
+    console.log(`⏱️  Max session duration: ${maxSessionDurationSeconds}s (${maxSessionDurationSeconds / 3600}h)`);
     const deploymentRole = new Role(this, "GithubActionsRole", {
       roleName: roleName,
+      maxSessionDuration: Duration.seconds(maxSessionDurationSeconds),
       assumedBy: new WebIdentityPrincipal(
         githubOidcProviderArn,
         {
