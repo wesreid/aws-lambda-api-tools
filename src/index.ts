@@ -39,3 +39,6 @@ export {
 
 export { createDevServer } from './lib/dev-server';
 export type { DevServerOptions } from './lib/dev-server';
+
+export { generateRouteSwaggerSpec, deriveTagFromPath } from './lib/swagger-route-specification-generator';
+export type { SwaggerGeneratorOptions } from './lib/swagger-route-specification-generator';
