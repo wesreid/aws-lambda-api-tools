@@ -36,3 +36,6 @@ export {
   addSecurityHeaders,
   addAuthHeaders,
 } from './lib/middleware-helpers';
+
+export { createDevServer } from './lib/dev-server';
+export type { DevServerOptions } from './lib/dev-server';
