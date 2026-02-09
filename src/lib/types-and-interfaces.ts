@@ -11,6 +11,8 @@ export type ConfigRouteEntry = {
   generateOpenApiDocs: boolean,
   handlerPath: string;
   authorizeRoute?: boolean;
+  /** OpenAPI tag for grouping this route in the Swagger UI. If not set, auto-derived from the path. */
+  tag?: string;
 };
 
 export type SecurityConfig = {

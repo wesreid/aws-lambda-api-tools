@@ -7,6 +7,7 @@ type RouteSpecType = {
   path: {
     description: string,
     operationId?: string,
+    tags?: string[],
     parameters?: Array<swaggerTypes.ParameterObject>,
     requestBody?: swaggerTypes.RequestBody,
     responses?: Record<string, swaggerTypes.ResponseObject>,
@@ -16,9 +17,43 @@ type RouteSpecType = {
   },
 };
 
-export const generateRouteSwaggerSpec = (schema: RouteSchema, routeEntry: ConfigRouteEntry): RouteSpecType => {
+export type SwaggerGeneratorOptions = {
+  /** Base URL path used to derive tags from route paths (e.g., '/api/v1') */
+  routesBaseUrlPath?: string;
+  /** If false, disables automatic tag grouping. Defaults to true. */
+  groupByTag?: boolean;
+  /** If true, appends `apiClient.{methodName}` to the description. Defaults to true. */
+  includeMethodNameInDescription?: boolean;
+};
+
+/**
+ * Derives a tag name from a route path by extracting the first resource segment
+ * after the base URL path. E.g., '/api/v1/campaigns/:campaignId/analytics' => 'Campaigns'
+ */
+export const deriveTagFromPath = (routePath: string, basePath?: string): string => {
+  let relativePath = routePath;
+  if (basePath) {
+    relativePath = routePath.startsWith(basePath) ? routePath.slice(basePath.length) : routePath;
+  }
+  // Remove leading slash, split, find first non-param segment
+  const segments = relativePath.replace(/^\//, '').split('/');
+  const resourceSegment = segments.find(s => !s.startsWith(':') && !s.startsWith('{') && s.length > 0);
+  if (!resourceSegment) return 'Default';
+  // Convert kebab-case to Title Case (e.g., 'merge-fields' => 'Merge Fields')
+  return resourceSegment
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
+
+export const generateRouteSwaggerSpec = (schema: RouteSchema, routeEntry: ConfigRouteEntry, options?: SwaggerGeneratorOptions): RouteSpecType => {
   const { requestBody: requestBodyJoiSchema, query: queryJoiSchema, params: pathParamsJoiSchema, responseBody: responseBodyJoiSchema } = { requestBody: {}, query: {}, params: {}, responseBody: {}, ...schema };
-  const { description, swaggerMethodName } = routeEntry;
+  const { description, swaggerMethodName, tag, path: routePath } = routeEntry;
+  const {
+    routesBaseUrlPath,
+    groupByTag = true,
+    includeMethodNameInDescription = true,
+  } = options || {};
   // console.log('schema:')
   // console.log(schema);
   let parameters: Array<swaggerTypes.ParameterObject> = [];
@@ -88,10 +123,27 @@ export const generateRouteSwaggerSpec = (schema: RouteSchema, routeEntry: Config
     }
   }
 
+  // Build enhanced description with API client method name
+  let enhancedDescription = description;
+  if (includeMethodNameInDescription && swaggerMethodName) {
+    enhancedDescription = `${description} — \`apiClient.${swaggerMethodName}()\``;
+  }
+
+  // Determine tags
+  const tags: string[] = [];
+  if (groupByTag) {
+    if (tag) {
+      tags.push(tag);
+    } else {
+      tags.push(deriveTagFromPath(routePath, routesBaseUrlPath));
+    }
+  }
+
   return {
     path: {
-      description,
+      description: enhancedDescription,
       operationId: swaggerMethodName || undefined,
+      ...(tags.length > 0 ? { tags } : {}),
       parameters,
       requestBody,
       responses: {
