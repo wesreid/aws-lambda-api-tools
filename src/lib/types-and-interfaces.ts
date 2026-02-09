@@ -33,6 +33,7 @@ export type SecurityConfig = {
 export type RouteConfig = {
   authorizeAllRoutes?: boolean;
   routes: Array<ConfigRouteEntry>;
+  routesBaseUrlPath?: string; // Optional base URL path (e.g., '/api/v1')
   security?: SecurityConfig;
 };
 
