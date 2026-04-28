@@ -206,27 +206,30 @@ function showDiff(existing: string[], final: string[], requested: string[], mode
 const app = new App();
 
 class GithubActionsIamStack extends Stack {
-  constructor(scope: App, id: string, props?: StackProps & { finalRepos: string[] }) {
+  constructor(scope: App, id: string, props?: StackProps & { finalRepos: string[]; oidcProviderExists: boolean }) {
     super(scope, id, props);
 
-    const { finalRepos = [] } = props || {};
+    const { finalRepos = [], oidcProviderExists = false } = props || {};
 
     // Reference existing OIDC provider or create new one
     const accountId = Stack.of(this).account;
     const githubOidcProviderArn = `arn:aws:iam::${accountId}:oidc-provider/token.actions.githubusercontent.com`;
     
-    // Always include OIDC provider in the stack template
-    // This ensures CloudFormation won't delete it on subsequent updates
-    // CloudFormation will handle idempotency (no-op if already exists with same config)
-    console.log('\n🔐 Including OIDC Provider in stack...');
-    new CfnOIDCProvider(this, "GithubOidcProvider", {
-      url: "https://token.actions.githubusercontent.com",
-      clientIdList: ["sts.amazonaws.com"],
-      thumbprintList: [
-        "6938fd4d98bab03faadb97b34396831e3780aea1",
-        "1c58a3a8518e8759bf075b76b750d4f2df264fcd"
-      ]
-    });
+    // Only create OIDC provider if it doesn't already exist in the account.
+    // AWS allows only one OIDC provider per URL per account - creating when it exists causes 409 AlreadyExists.
+    if (!oidcProviderExists) {
+      console.log('\n🔐 Creating OIDC Provider in stack...');
+      new CfnOIDCProvider(this, "GithubOidcProvider", {
+        url: "https://token.actions.githubusercontent.com",
+        clientIdList: ["sts.amazonaws.com"],
+        thumbprintList: [
+          "6938fd4d98bab03faadb97b34396831e3780aea1",
+          "1c58a3a8518e8759bf075b76b750d4f2df264fcd"
+        ]
+      });
+    } else {
+      console.log('\n🔐 Using existing OIDC Provider (skipping creation to avoid AlreadyExists)...');
+    }
 
     console.log(`\n👤 Creating/Updating IAM Role: ${roleName}...`);
     console.log(`⏱️  Max session duration: ${maxSessionDurationSeconds}s (${maxSessionDurationSeconds / 3600}h)`);
@@ -331,7 +334,8 @@ async function main() {
   
   // Create/update stack
   new GithubActionsIamStack(app, stackName, {
-    finalRepos: finalRepos
+    finalRepos: finalRepos,
+    oidcProviderExists: oidcExists
   });
 
   console.log('\n🔨 Synthesizing CloudFormation template...');
