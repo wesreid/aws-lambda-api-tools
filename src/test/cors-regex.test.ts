@@ -10,12 +10,12 @@ describe('CORS Regex Pattern Matching', () => {
   const testConfig: SecurityConfig = {
     cors: {
       allowOrigin: [
-        'https://xorbit.app',
+        'https://example.com',
         'http://localhost:3000'
       ],
       allowOriginPatterns: [
-        '^https://[a-zA-Z0-9-]+\\.xorbit\\.dev$',
-        '^https://[a-zA-Z0-9-]+\\.xorbit\\.app$',
+        '^https://[a-zA-Z0-9-]+\\.example\\.dev$',
+        '^https://[a-zA-Z0-9-]+\\.example\\.com$',
         '^http://localhost:[0-9]+$'
       ],
       allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -27,8 +27,8 @@ describe('CORS Regex Pattern Matching', () => {
 
   describe('Exact String Matching', () => {
     test('should allow exact string matches', () => {
-      const headers = generateCorsHeaders(testConfig, 'https://xorbit.app');
-      expect(headers['Access-Control-Allow-Origin']).toBe('https://xorbit.app');
+      const headers = generateCorsHeaders(testConfig, 'https://example.com');
+      expect(headers['Access-Control-Allow-Origin']).toBe('https://example.com');
       expect(headers['Access-Control-Allow-Methods']).toBe('GET, POST, PUT, DELETE, OPTIONS');
     });
 
@@ -44,13 +44,13 @@ describe('CORS Regex Pattern Matching', () => {
   });
 
   describe('Regex Pattern Matching', () => {
-    test('should allow subdomains matching xorbit.dev pattern', () => {
+    test('should allow subdomains matching example.dev pattern', () => {
       const testCases = [
-        'https://S1401.xorbit.dev',
-        'https://T2502.xorbit.dev',
-        'https://api.xorbit.dev',
-        'https://admin-panel.xorbit.dev',
-        'https://user123.xorbit.dev'
+        'https://app-1401.example.dev',
+        'https://staging-2502.example.dev',
+        'https://api.example.dev',
+        'https://admin-panel.example.dev',
+        'https://user123.example.dev'
       ];
 
       testCases.forEach(origin => {
@@ -60,11 +60,11 @@ describe('CORS Regex Pattern Matching', () => {
       });
     });
 
-    test('should allow subdomains matching xorbit.app pattern', () => {
+    test('should allow subdomains matching example.com pattern', () => {
       const testCases = [
-        'https://S1401.xorbit.app',
-        'https://api.xorbit.app',
-        'https://staging.xorbit.app'
+        'https://app-1401.example.com',
+        'https://api.example.com',
+        'https://staging.example.com'
       ];
 
       testCases.forEach(origin => {
@@ -89,13 +89,13 @@ describe('CORS Regex Pattern Matching', () => {
 
     test('should reject origins that do not match patterns', () => {
       const testCases = [
-        'https://evil.xorbit.dev',      // No subdomain
-        'http://S1401.xorbit.dev',      // Wrong protocol
-        'https://S1401.xorbit.com',     // Wrong domain
-        'https://S1401.evil.dev',       // Wrong base domain
-        'https://localhost:3000',       // Wrong protocol for localhost
-        'http://localhost:abc',         // Non-numeric port
-        'https://S1401.xorbit.dev.evil.com' // Domain spoofing attempt
+        'https://example.dev',              // No subdomain (pattern requires one)
+        'http://app-1401.example.dev',      // Wrong protocol
+        'https://app-1401.example.org',     // Wrong TLD
+        'https://app-1401.evil.dev',        // Wrong base domain
+        'https://localhost:3000',           // Wrong protocol for localhost
+        'http://localhost:abc',             // Non-numeric port
+        'https://app-1401.example.dev.evil.com' // Domain spoofing attempt
       ];
 
       testCases.forEach(origin => {
@@ -108,12 +108,12 @@ describe('CORS Regex Pattern Matching', () => {
   describe('Mixed Configuration', () => {
     test('should handle both exact strings and regex patterns', () => {
       // Exact match should work
-      let headers = generateCorsHeaders(testConfig, 'https://xorbit.app');
-      expect(headers['Access-Control-Allow-Origin']).toBe('https://xorbit.app');
+      let headers = generateCorsHeaders(testConfig, 'https://example.com');
+      expect(headers['Access-Control-Allow-Origin']).toBe('https://example.com');
 
       // Regex match should work
-      headers = generateCorsHeaders(testConfig, 'https://S1401.xorbit.dev');
-      expect(headers['Access-Control-Allow-Origin']).toBe('https://S1401.xorbit.dev');
+      headers = generateCorsHeaders(testConfig, 'https://app-1401.example.dev');
+      expect(headers['Access-Control-Allow-Origin']).toBe('https://app-1401.example.dev');
 
       // Non-matching should be rejected
       headers = generateCorsHeaders(testConfig, 'https://evil.com');
@@ -127,7 +127,7 @@ describe('CORS Regex Pattern Matching', () => {
         cors: {
           allowOriginPatterns: [
             '.*', // Overly permissive - should be avoided
-            '^https://[a-zA-Z0-9-]+\\.xorbit\\.dev$'
+            '^https://[a-zA-Z0-9-]+\\.example\\.dev$'
           ]
         }
       };
@@ -144,18 +144,18 @@ describe('CORS Regex Pattern Matching', () => {
         cors: {
           allowOriginPatterns: [
             '[invalid regex',  // Invalid regex
-            '^https://[a-zA-Z0-9-]+\\.xorbit\\.dev$' // Valid regex
+            '^https://[a-zA-Z0-9-]+\\.example\\.dev$' // Valid regex
           ]
         }
       };
 
       // Should still work with valid pattern despite invalid one
-      const headers = generateCorsHeaders(invalidConfig, 'https://S1401.xorbit.dev');
-      expect(headers['Access-Control-Allow-Origin']).toBe('https://S1401.xorbit.dev');
+      const headers = generateCorsHeaders(invalidConfig, 'https://app-1401.example.dev');
+      expect(headers['Access-Control-Allow-Origin']).toBe('https://app-1401.example.dev');
     });
 
     test('should return exact origin, never the pattern', () => {
-      const origin = 'https://S1401.xorbit.dev';
+      const origin = 'https://app-1401.example.dev';
       const headers = generateCorsHeaders(testConfig, origin);
       
       // Should return the exact origin, not the regex pattern
@@ -173,17 +173,17 @@ describe('CORS Regex Pattern Matching', () => {
             '^https://[a-zA-Z0-9-]+\\.domain1\\.com$',
             '^https://[a-zA-Z0-9-]+\\.domain2\\.com$',
             '^https://[a-zA-Z0-9-]+\\.domain3\\.com$',
-            '^https://[a-zA-Z0-9-]+\\.xorbit\\.dev$',
+            '^https://[a-zA-Z0-9-]+\\.example\\.dev$',
             '^http://localhost:[0-9]+$'
           ]
         }
       };
 
       const start = Date.now();
-      const headers = generateCorsHeaders(configWithManyPatterns, 'https://S1401.xorbit.dev');
+      const headers = generateCorsHeaders(configWithManyPatterns, 'https://app-1401.example.dev');
       const duration = Date.now() - start;
 
-      expect(headers['Access-Control-Allow-Origin']).toBe('https://S1401.xorbit.dev');
+      expect(headers['Access-Control-Allow-Origin']).toBe('https://app-1401.example.dev');
       expect(duration).toBeLessThan(10); // Should be very fast
     });
   });

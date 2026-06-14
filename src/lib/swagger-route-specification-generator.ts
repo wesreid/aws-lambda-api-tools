@@ -1,6 +1,6 @@
 import * as joi from 'joi';
 import joiToSwagger, { ComponentsSchema } from 'joi-to-swagger';
-import { ConfigRouteEntry, RouteSchema } from './types-and-interfaces';
+import { ConfigRouteEntry, RouteSchema, AsyncBindingConfig } from './types-and-interfaces';
 import * as swaggerTypes from './swagger-specification-types';
 
 type RouteSpecType = {
@@ -11,6 +11,7 @@ type RouteSpecType = {
     parameters?: Array<swaggerTypes.ParameterObject>,
     requestBody?: swaggerTypes.RequestBody,
     responses?: Record<string, swaggerTypes.ResponseObject>,
+    'x-async-binding'?: Record<string, unknown>,
   },
   components: {
     schemas: Record<string, ComponentsSchema>,
@@ -45,6 +46,34 @@ export const deriveTagFromPath = (routePath: string, basePath?: string): string 
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 };
+
+function buildAsyncBindingExtension(asyncBinding?: AsyncBindingConfig): Record<string, unknown> {
+  if (!asyncBinding) return {};
+
+  const extension: Record<string, unknown> = {
+    event: asyncBinding.event,
+    room: asyncBinding.room,
+  };
+
+  if (asyncBinding.description) {
+    extension.description = asyncBinding.description;
+  }
+
+  if (asyncBinding.lifecycleEvents && asyncBinding.lifecycleEvents.length > 0) {
+    extension.lifecycleEvents = asyncBinding.lifecycleEvents;
+  }
+
+  if (asyncBinding.payload) {
+    try {
+      const { swagger } = joiToSwagger(asyncBinding.payload);
+      extension.payload = swagger;
+    } catch {
+      // If payload schema fails to convert, omit it
+    }
+  }
+
+  return { 'x-async-binding': extension };
+}
 
 export const generateRouteSwaggerSpec = (schema: RouteSchema, routeEntry: ConfigRouteEntry, options?: SwaggerGeneratorOptions): RouteSpecType => {
   const { requestBody: requestBodyJoiSchema, query: queryJoiSchema, params: pathParamsJoiSchema, responseBody: responseBodyJoiSchema } = { requestBody: {}, query: {}, params: {}, responseBody: {}, ...schema };
@@ -149,6 +178,7 @@ export const generateRouteSwaggerSpec = (schema: RouteSchema, routeEntry: Config
       responses: {
         '200': responseBody,
       },
+      ...buildAsyncBindingExtension(routeEntry.asyncBinding),
     },
     components: {
       schemas: componentSchemas,

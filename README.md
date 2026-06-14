@@ -1,325 +1,472 @@
 # AWS Lambda API Tools
 
-> **Alpha Release Notice**: This package is currently in alpha. While it has been battle-tested in enterprise environments, the public API may undergo changes as we gather community feedback.
+A production-proven toolkit for building structured, type-safe REST APIs on AWS Lambda + API Gateway. Define routes declaratively, get automatic OpenAPI documentation, built-in validation, security, and — new in v0.1.39 — **async binding metadata** that tells AI agents and tooling which API calls have corresponding WebSocket completion events.
 
-## Author's Note
+## Why This Package
 
-Over the past five years, I've developed and refined this toolkit while building enterprise-grade applications on AWS. What started as a simple routing solution has evolved into a comprehensive toolkit that has successfully handled millions of requests in production environments.
+Building APIs on Lambda often means reinventing routing, validation, documentation, and security for every project. This package provides a batteries-included framework that:
 
-This package embodies best practices learned from:
-- Migrating from AWS CDK v1.x to v2.x
-- Building and maintaining large-scale Lambda-based APIs
-- Supporting multiple enterprise applications in production
-- Implementing robust security and validation patterns
-- Optimizing Lambda cold starts and performance
+- Turns a single Lambda function into a full REST API with path-based routing
+- Generates OpenAPI/Swagger specs automatically from your Joi schemas
+- Handles JWT validation, CORS, security headers, and request validation as middleware
+- Runs locally with a built-in dev server (no SAM/Serverless Framework needed for iteration)
+- Declares async WebSocket bindings alongside REST routes for event-driven architectures
+- Sets up GitHub Actions OIDC IAM with a single command
 
-While the core functionality is stable and proven, I'm releasing this as an alpha version to gather community feedback and ensure the public API meets the needs of a broader audience.
+Battle-tested in enterprise environments handling millions of requests across multiple production applications.
 
-### Coming Soon
-- Complete example project from zero to production
-- Step-by-step AWS account setup guide
-- CDK infrastructure templates
-- Performance optimization guides
-- Advanced middleware patterns
-- Real-world use cases
+## Features
 
-## Key Features
-
-- 🛣️ **Structured Routing** - Define routes with complete type safety and automatic OpenAPI documentation generation
-- 🔒 **JWT Authentication** - Built-in JWT validation middleware
-- ✅ **Schema Validation** - Request/response validation using Joi
-- 🚦 **Middleware Chain** - Flexible middleware system with type-safe middleware composition
-- 📝 **OpenAPI/Swagger** - Automatic API documentation generation
-- 🔍 **Type Safety** - Comprehensive TypeScript support
-- 🎯 **Path Parameters** - Support for dynamic route parameters
-- ⚡ **Performance** - Optimized for AWS Lambda execution.
+- **Declarative Route Configuration** — Define routes as data, not code. Method, path, handler, docs, auth, and async bindings in one object.
+- **Automatic OpenAPI Generation** — Joi request/response schemas convert to OpenAPI 3.0 specs. Run `generate-oas` and get a complete API spec.
+- **Async Binding Metadata** — Declare which WebSocket events correspond to each route's async results. Emitted as `x-async-binding` OpenAPI extensions for AI agents, SDK codegen, and documentation.
+- **Middleware Chain** — Composable, type-safe middleware. JWT validation, schema validation, response headers — stack them per-route.
+- **Schema Validation** — Joi-based request/response validation with automatic 400 error responses.
+- **JWT Authentication** — Built-in JWT validation middleware with token rotation support.
+- **Security Configuration** — CORS (exact, regex, pattern-based origins), security headers, credential handling — all from a JSON config file.
+- **Response Header Helpers** — Rate limiting, cache control, security headers, auth headers — add from any middleware.
+- **Local Dev Server** — `createDevServer()` runs your Lambda routes as a local HTTP server. No deploy needed during development.
+- **GitHub Actions IAM** — One command to create OIDC IAM roles for secure CI/CD deployments.
+- **TypeScript First** — Full type safety across route configs, handlers, middleware, and schemas.
 
 ## Installation
 
-```shell
+```bash
 npm install aws-lambda-api-tools
 ```
 
 ## Quick Start
 
-### 1. Define Your Route Handlers
+### 1. Define Route Configuration
 
 ```typescript
-// handlers/users/create-user.ts
+// routes-config.ts
+import { ConfigRouteEntry, RouteConfig } from 'aws-lambda-api-tools';
+
+const routes: ConfigRouteEntry[] = [
+  {
+    description: 'Create a new user',
+    swaggerMethodName: 'createUser',
+    method: 'POST',
+    path: '/api/v1/users',
+    handlerPath: 'src/routes/users/create-user',
+    generateOpenApiDocs: true,
+    authorizeRoute: true,
+  },
+  {
+    description: 'Get user by ID',
+    swaggerMethodName: 'getUser',
+    method: 'GET',
+    path: '/api/v1/users/{userId}',
+    handlerPath: 'src/routes/users/get-user',
+    generateOpenApiDocs: true,
+    authorizeRoute: true,
+  },
+  {
+    description: 'Generate a report (async)',
+    swaggerMethodName: 'generateReport',
+    method: 'POST',
+    path: '/api/v1/reports',
+    handlerPath: 'src/routes/reports/generate-report',
+    generateOpenApiDocs: true,
+    authorizeRoute: true,
+    asyncBinding: {
+      event: 'report:completed',
+      room: 'user:{userId}',
+      description: 'Fires when the report generation completes',
+      lifecycleEvents: [
+        { event: 'report:progress', description: 'Progress percentage update' },
+        { event: 'report:failed', description: 'Report generation failed' },
+      ],
+    },
+  },
+];
+
+export const routeConfig: RouteConfig = {
+  authorizeAllRoutes: false,
+  routes,
+  routesBaseUrlPath: '/api/v1',
+};
+```
+
+### 2. Create Route Handlers
+
+```typescript
+// src/routes/users/create-user.ts
+import Joi from 'joi';
 import {
   RouteModule,
   RouteSchema,
+  RouteArguments,
   jwtValidationMiddleware,
   schemaValidationMiddleware,
 } from 'aws-lambda-api-tools';
 
 const routeSchema: RouteSchema = {
-  requestBody: CreateUserRequestSchema,
-  responseBody: CreateUserResponseSchema,
+  requestBody: Joi.object({
+    email: Joi.string().email().required(),
+    name: Joi.string().min(1).max(100).required(),
+  }),
+  responseBody: Joi.object({
+    id: Joi.string().required(),
+    email: Joi.string().required(),
+    name: Joi.string().required(),
+    createdAt: Joi.string().isoDate().required(),
+  }),
 };
 
-export const handler = async (input: RouteArguments) => {
-  // Your handler logic here
-  return {
-    statusCode: 200,
-    body: { /* response data */ }
-  };
+const handler = async (args: RouteArguments) => {
+  const { email, name } = args.body;
+  const user = await createUser({ email, name });
+  return { statusCode: 201, body: user };
 };
 
 export default {
-  routeChain: [
-    jwtValidationMiddleware,
-    schemaValidationMiddleware(routeSchema),
-    handler
-  ],
+  routeChain: [jwtValidationMiddleware, schemaValidationMiddleware(routeSchema), handler],
   routeSchema,
 } as RouteModule;
 ```
 
-### 2. Configure Your Routes
+### 3. Register Route Modules
 
 ```typescript
-// routes/users.config.ts
-import { ConfigRouteEntry } from 'aws-lambda-api-tools';
+// route-modules.ts
+import { RouteModule } from 'aws-lambda-api-tools';
+import createUser from './routes/users/create-user';
+import getUser from './routes/users/get-user';
+import generateReport from './routes/reports/generate-report';
 
-export default [
-  {
-    description: 'Create user',
-    swaggerMethodName: 'createUser',
-    generateOpenApiDocs: true,
-    handlerPath: 'handlers/users/create-user',
-    method: 'POST',
-    path: '/api/v1/users',
-  },
-  {
-    description: 'Get user by ID',
-    swaggerMethodName: 'getUser',
-    generateOpenApiDocs: true,
-    handlerPath: 'handlers/users/get-user',
-    method: 'GET',
-    path: '/api/v1/users/{userId}',
-  }
-] as Array<ConfigRouteEntry>;
+export const routeModules: Record<string, RouteModule> = {
+  'src/routes/users/create-user': createUser,
+  'src/routes/users/get-user': getUser,
+  'src/routes/reports/generate-report': generateReport,
+};
 ```
 
-### 3. Create Your Lambda Handler
+### 4. Lambda Entry Point
 
 ```typescript
 // index.ts
 import { lambdaRouteProxyEntryHandler } from 'aws-lambda-api-tools';
-import { config } from './routes-config';
+import { routeConfig } from './routes-config';
 import { routeModules } from './route-modules';
 
-export const handler = lambdaRouteProxyEntryHandler(config, routeModules);
+export const handler = lambdaRouteProxyEntryHandler(routeConfig, routeModules);
 ```
 
-## Route Configuration
+That's it. One Lambda function serves your entire API with routing, validation, auth, and documentation.
 
-Routes are defined using the `ConfigRouteEntry` interface:
+---
+
+## Async Binding Metadata
+
+Modern APIs often trigger asynchronous work — image generation, report compilation, video processing — where the HTTP response acknowledges the request, but the actual result arrives later via WebSocket or Server-Sent Events.
+
+The `asyncBinding` field on `ConfigRouteEntry` declares this relationship at the source:
 
 ```typescript
-interface ConfigRouteEntry {
-  description: string;
-  swaggerMethodName: string;
-  generateOpenApiDocs: boolean;
-  handlerPath: string;
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'ANY';
-  path: string;
+{
+  description: 'Generate a video clip',
+  swaggerMethodName: 'generateClip',
+  method: 'POST',
+  path: '/api/v1/clips/generate',
+  handlerPath: 'src/routes/clips/generate-clip',
+  generateOpenApiDocs: true,
+  asyncBinding: {
+    event: 'generation:completed',
+    room: 'generation:{jobId}',
+    description: 'Fires when the video clip generation pipeline completes',
+    lifecycleEvents: [
+      { event: 'generation:progress', description: 'Progress update with phase info' },
+      { event: 'generation:queued', description: 'Job queued waiting for capacity' },
+      { event: 'generation:failed', description: 'Generation failed with error details' },
+    ],
+  },
 }
 ```
+
+### What This Produces
+
+When you run `generate-oas`, the OpenAPI spec for this operation includes:
+
+```yaml
+/api/v1/clips/generate:
+  post:
+    operationId: generateClip
+    description: Generate a video clip
+    x-async-binding:
+      event: "generation:completed"
+      room: "generation:{jobId}"
+      description: "Fires when the video clip generation pipeline completes"
+      lifecycleEvents:
+        - event: "generation:progress"
+          description: "Progress update with phase info"
+        - event: "generation:queued"
+          description: "Job queued waiting for capacity"
+        - event: "generation:failed"
+          description: "Generation failed with error details"
+```
+
+### Who Consumes This
+
+- **AI Agents** — An agent calling `generateClip()` knows to subscribe to `generation:{jobId}` and wait for `generation:completed` before continuing its workflow.
+- **API Client Codegen** — Downstream tools can generate subscribe/unsubscribe helpers alongside REST methods.
+- **Documentation** — API docs can show developers which WebSocket events to listen for after calling an async endpoint.
+- **Monitoring** — Observability tools can correlate HTTP requests with their eventual async completions.
+
+### AsyncBindingConfig Reference
+
+```typescript
+type AsyncBindingConfig = {
+  /** WebSocket event name emitted on async completion */
+  event: string;
+  /** Room/channel pattern for subscription (e.g., 'generation:{jobId}', 'user:{userId}') */
+  room: string;
+  /** Additional lifecycle events beyond completion */
+  lifecycleEvents?: Array<{
+    event: string;
+    description?: string;
+  }>;
+  /** Description of when the completion event fires */
+  description?: string;
+  /** Joi schema for the completion event payload */
+  payload?: Schema;
+};
+```
+
+---
+
+## Route Configuration Reference
+
+```typescript
+type ConfigRouteEntry = {
+  /** Human-readable description (used in OpenAPI) */
+  description: string;
+  /** Operation ID / API client method name (e.g., 'createUser') */
+  swaggerMethodName?: string;
+  /** HTTP method */
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS' | 'ANY';
+  /** Route path with {param} placeholders */
+  path: string;
+  /** Path to the handler module (must match key in routeModules) */
+  handlerPath: string;
+  /** Whether to include in generated OpenAPI docs */
+  generateOpenApiDocs: boolean;
+  /** Override auth for this route (true = require, false = skip) */
+  authorizeRoute?: boolean;
+  /** OpenAPI tag for grouping (auto-derived from path if not set) */
+  tag?: string;
+  /** Lambda function name override */
+  functionName?: string;
+  /** Async WebSocket binding metadata */
+  asyncBinding?: AsyncBindingConfig;
+};
+
+type RouteConfig = {
+  /** Apply auth to all routes by default */
+  authorizeAllRoutes?: boolean;
+  /** All route entries */
+  routes: ConfigRouteEntry[];
+  /** Base URL path for tag derivation (e.g., '/api/v1') */
+  routesBaseUrlPath?: string;
+  /** Security configuration */
+  security?: SecurityConfig;
+};
+```
+
+---
 
 ## Middleware
 
 ### Built-in Middleware
 
 #### JWT Validation
+
 ```typescript
 import { jwtValidationMiddleware } from 'aws-lambda-api-tools';
 
-const routeModule: RouteModule = {
-  routeChain: [
-    jwtValidationMiddleware,
-    handler
-  ]
-};
+export default {
+  routeChain: [jwtValidationMiddleware, handler],
+  routeSchema,
+} as RouteModule;
 ```
 
+Validates the `Authorization: Bearer <token>` header. Decoded claims are available on `args.routeData`.
+
 #### Schema Validation
+
 ```typescript
 import { schemaValidationMiddleware } from 'aws-lambda-api-tools';
 
-const schema: RouteSchema = {
-  requestBody: Joi.object({
-    name: Joi.string().required()
-  }),
-  responseBody: Joi.object({
-    id: Joi.string(),
-    name: Joi.string()
-  })
+const routeSchema: RouteSchema = {
+  params: { userId: Joi.string().uuid().required() },
+  query: { include: Joi.string().valid('posts', 'comments') },
+  requestBody: Joi.object({ name: Joi.string().required() }),
+  responseBody: Joi.object({ id: Joi.string(), name: Joi.string() }),
 };
 
-const routeModule: RouteModule = {
-  routeChain: [
-    schemaValidationMiddleware(schema),
-    handler
-  ],
-  routeSchema: schema
+export default {
+  routeChain: [schemaValidationMiddleware(routeSchema), handler],
+  routeSchema,
+} as RouteModule;
+```
+
+### Response Header Helpers
+
+Add headers from any middleware in the chain:
+
+```typescript
+import {
+  addResponseHeader,
+  addRateLimitHeaders,
+  addCacheHeaders,
+  addSecurityHeaders,
+} from 'aws-lambda-api-tools';
+
+const rateLimitMiddleware = (args: RouteArguments) => {
+  return addRateLimitHeaders(args, 100, 95, Date.now() + 3600000);
+};
+
+const cacheMiddleware = (args: RouteArguments) => {
+  return addCacheHeaders(args, 300, { public: true, mustRevalidate: true });
 };
 ```
 
-## Error Handling
+---
 
-The package includes a `CustomError` class for standardized error responses:
+## Security Configuration
+
+Create an `api-security.json` in your project root:
+
+```json
+{
+  "cors": {
+    "allowOrigin": ["https://myapp.com", "https://staging.myapp.com"],
+    "allowOriginPatterns": ["^https://[a-zA-Z0-9-]+\\.preview\\.myapp\\.com$"],
+    "allowMethods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    "allowHeaders": ["Content-Type", "Authorization"],
+    "allowCredentials": true,
+    "maxAge": 86400
+  },
+  "defaultHeaders": {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "X-XSS-Protection": "1; mode=block"
+  },
+  "jwtRotationHeaders": {
+    "enabled": true,
+    "rotationRequiredHeader": "X-Token-Rotation-Required",
+    "rotationReasonHeader": "X-Token-Rotation-Reason"
+  }
+}
+```
+
+Supports exact string origins, regex patterns (as strings for JSON compatibility), and wildcard. Validates configuration on load and warns about insecure patterns.
+
+---
+
+## Local Development Server
+
+Run your Lambda routes locally without deploying:
+
+```typescript
+import { createDevServer } from 'aws-lambda-api-tools';
+import { routeConfig } from './routes-config';
+import { routeModules } from './route-modules';
+
+createDevServer({
+  port: 3000,
+  routeConfig,
+  routeModules,
+});
+```
+
+```bash
+# Or as a script in package.json
+node -r ts-node/register dev-server.ts
+```
+
+The dev server simulates API Gateway v2 events, handles CORS preflight, and provides the same routing behavior as production.
+
+---
+
+## CLI Tools
+
+### Generate OpenAPI Spec
+
+```bash
+npx generate-oas
+```
+
+Reads your route configs and handler schemas, produces an OpenAPI 3.0 JSON spec including `x-async-binding` extensions.
+
+### GitHub Actions IAM Setup
+
+Create OIDC IAM roles for secure CI/CD (no long-lived credentials):
+
+```bash
+# Single repo
+npx aws-lambda-api-tools create-gha-iam-stack --repo=myorg/my-service
+
+# Multiple repos
+npx aws-lambda-api-tools create-gha-iam-stack \
+  --repo=myorg/service-a \
+  --repo=myorg/service-b
+
+# Custom policy
+npx aws-lambda-api-tools create-gha-iam-stack \
+  --repo=myorg/my-service \
+  --policy=AWSLambda_FullAccess
+
+# Manage repos
+npx aws-lambda-api-tools create-gha-iam-stack --mode=list
+npx aws-lambda-api-tools create-gha-iam-stack --remove-repo=myorg/old-service
+```
+
+---
+
+## Error Handling
 
 ```typescript
 import { CustomError } from 'aws-lambda-api-tools';
 
-throw new CustomError('Resource not found', 404);
+// Throws a structured error with HTTP status code
+throw new CustomError('User not found', 404);
+throw new CustomError('Insufficient permissions', 403);
 ```
 
-## Type Definitions
+---
 
-Key TypeScript interfaces:
+## Agent-Ready APIs
 
-```typescript
-interface RouteModule {
-  routeChain: MiddlewareChain;
-  routeSchema?: RouteSchema;
-}
+When you declare `asyncBinding` on your routes, your API becomes **agent-ready** — AI agents can programmatically understand which endpoints trigger async work and how to subscribe for results.
 
-interface RouteSchema {
-  requestBody?: joi.Schema;
-  responseBody?: joi.Schema;
-  query?: Record<string, joi.Schema>;
-  params?: Record<string, joi.Schema>;
-}
+This is the foundation for building AI assistants that can orchestrate complex workflows across your API:
 
-interface RouteArguments {
-  body: any;
-  params: Record<string, string>;
-  query: Record<string, string>;
-  routeData: any;
-}
-```
+1. Agent calls `POST /clips/generate` → gets `{ jobId: "abc123" }`
+2. Agent reads `x-async-binding` from the spec → knows to subscribe to room `generation:abc123`
+3. Agent listens for `generation:progress`, `generation:completed`, or `generation:failed`
+4. Agent continues its workflow when the async result arrives
 
-## Best Practices
+No manual binding configuration needed. The API spec IS the contract.
 
-1. **Organized Route Structure**
-   - Group routes by feature/resource
-   - Use consistent file naming conventions
-   - Separate route configs from handlers
+*Closure Agent SDK integration coming Summer 2026.*
 
-2. **Type Safety**
-   - Define schemas for request/response validation
-   - Use TypeScript interfaces for route configurations
-   - Leverage middleware type definitions
+---
 
-3. **Error Handling**
-   - Use `CustomError` for consistent error responses
-   - Implement proper error middleware
-   - Handle edge cases appropriately
+## Roadmap
 
-4. **Security**
-   - Always use JWT validation for protected routes
-   - Implement proper permission checks
-   - Validate all input data
+- **Zod schema support** — Use Zod as an alternative to Joi for request/response validation and OpenAPI generation
+- **AsyncAPI spec generation** — Generate AsyncAPI documents from `asyncBinding` metadata alongside OpenAPI
+- **WebSocket route support** — First-class WebSocket route handlers with the same middleware pattern
+- **Rate limiting middleware** — Built-in token bucket / sliding window rate limiting
+- **OpenTelemetry integration** — Automatic tracing spans per route handler
 
-## GitHub Actions IAM Setup
-
-This package includes a utility to set up IAM OIDC authentication for GitHub Actions, allowing secure deployments to AWS without storing long-lived credentials.
-
-### Usage
-
-Create or update an IAM stack for GitHub Actions OIDC authentication:
-
-```bash
-npx aws-lambda-api-tools create-gha-iam-stack --repo=owner/repo-name
-```
-
-### Options
-
-- `--repo`: (Required, Multiple) GitHub repository in the format `owner/repo-name`. Can be specified multiple times to grant access to multiple repositories
-- `--policy`: (Optional) AWS managed policy name to attach to the role. Defaults to 'AdministratorAccess'
-- Uses AWS credentials from your environment or AWS_PROFILE
-
-### Examples
-
-**Single Repository:**
-```bash
-npx aws-lambda-api-tools create-gha-iam-stack --repo=myorg/my-service
-```
-
-**Multiple Repositories:**
-```bash
-npx aws-lambda-api-tools create-gha-iam-stack \
-  --repo=myorg/service-a \
-  --repo=myorg/service-b \
-  --repo=myorg/service-c
-```
-
-**Custom IAM Policy:**
-```bash
-npx aws-lambda-api-tools create-gha-iam-stack \
-  --repo=myorg/my-service \
-  --policy=AWSLambda_FullAccess
-```
-
-**Using AWS Profile:**
-```bash
-AWS_PROFILE=staging npx aws-lambda-api-tools create-gha-iam-stack \
-  --repo=myorg/my-service
-```
-
-### Implementation Details
-
-The tool creates a CloudFormation stack named `GithubActionsIam` containing:
-
-1. An OIDC Provider for GitHub Actions (if it doesn't exist)
-2. An IAM Role with:
-   - Trust policy configured for the specified GitHub repositories
-   - Specified AWS managed policy attached (defaults to AdministratorAccess)
-
-The role ARN is output after stack creation/update and can be used in your GitHub Actions workflows.
-
-### Using in GitHub Actions
-
-Add the following to your GitHub Actions workflow:
-
-```yaml
-permissions:
-  id-token: write
-  contents: read
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}  # Role ARN from stack output
-          aws-region: us-east-1
-      
-      - name: Deploy
-        run: |
-          # Your deployment steps here
-```
-
-Set the `AWS_ROLE_ARN` secret in your GitHub repository to the role ARN output by the create-gha-iam-stack command.
-
-### Updating Existing Stacks
-
-You can run the command again with different repositories to update the stack:
-- New repositories will be added to the trust policy
-- Existing repositories will remain unchanged
-- The attached policy can be updated by specifying a new --policy value
-
+---
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome. Please open an issue to discuss proposed changes before submitting a PR.
 
 ## License
 

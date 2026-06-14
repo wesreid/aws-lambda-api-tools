@@ -2,6 +2,26 @@ import { APIGatewayProxyEvent, APIGatewayProxyEventV2 } from 'aws-lambda';
 import { Schema } from 'joi';
 import * as swaggerTypes from './swagger-specification-types';
 
+export type AsyncBindingLifecycleEvent = {
+  /** WebSocket event name for this lifecycle stage */
+  event: string;
+  /** Human-readable description of when this event fires */
+  description?: string;
+};
+
+export type AsyncBindingConfig = {
+  /** WebSocket event name emitted on async completion */
+  event: string;
+  /** Room pattern for subscription (e.g., 'generation:{jobId}', 'user:{userId}') */
+  room: string;
+  /** Additional lifecycle events beyond completion (progress, queued, failed, etc.) */
+  lifecycleEvents?: AsyncBindingLifecycleEvent[];
+  /** Human-readable description of when the completion event fires */
+  description?: string;
+  /** Joi schema for the completion event payload (emitted as JSON Schema in OpenAPI) */
+  payload?: Schema<any>;
+};
+
 export type ConfigRouteEntry = {
   functionName?: string;
   description: string;
@@ -13,6 +33,8 @@ export type ConfigRouteEntry = {
   authorizeRoute?: boolean;
   /** OpenAPI tag for grouping this route in the Swagger UI. If not set, auto-derived from the path. */
   tag?: string;
+  /** Declares the async WebSocket event(s) that correspond to this route's asynchronous result */
+  asyncBinding?: AsyncBindingConfig;
 };
 
 export type SecurityConfig = {
