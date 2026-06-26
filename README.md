@@ -19,6 +19,7 @@ Battle-tested in enterprise environments handling millions of requests across mu
 
 - **Declarative Route Configuration** — Define routes as data, not code. Method, path, handler, docs, auth, and async bindings in one object.
 - **Automatic OpenAPI Generation** — Joi request/response schemas convert to OpenAPI 3.0 specs. Run `generate-oas` and get a complete API spec.
+- **Route-Module Codegen** — Generate (and CI-verify) the static handler map from your route config with `generate-route-modules`. No more silent 404s from a forgotten registration.
 - **Async Binding Metadata** — Declare which WebSocket events correspond to each route's async results. Emitted as `x-async-binding` OpenAPI extensions for AI agents, SDK codegen, and documentation.
 - **Middleware Chain** — Composable, type-safe middleware. JWT validation, schema validation, response headers — stack them per-route.
 - **Schema Validation** — Joi-based request/response validation with automatic 400 error responses.
@@ -129,6 +130,10 @@ export default {
 
 ### 3. Register Route Modules
 
+Because the Lambda is esbuild-bundled, handlers must be **statically imported** — a
+dynamic `require(handlerPath)` can't be bundled. So a `route-modules.ts` maps each
+route's `handlerPath` to its imported module:
+
 ```typescript
 // route-modules.ts
 import { RouteModule } from 'aws-lambda-api-tools';
@@ -142,6 +147,16 @@ export const routeModules: Record<string, RouteModule> = {
   'src/routes/reports/generate-report': generateReport,
 };
 ```
+
+**Don't hand-maintain this.** A route that's in the config but missing from this map
+is a silent 404 at runtime. Generate it from your route config instead:
+
+```bash
+npx aws-lambda-api-tools generate-route-modules
+```
+
+See [Generate Route Modules](#generate-route-modules) below for wiring it into your
+build + CI.
 
 ### 4. Lambda Entry Point
 
@@ -399,6 +414,50 @@ npx generate-oas
 ```
 
 Reads your route configs and handler schemas, produces an OpenAPI 3.0 JSON spec including `x-async-binding` extensions.
+
+### Generate Route Modules
+
+Generates the static `route-modules.ts` map from your `*_routes-config` files (the
+single source of truth), so the esbuild-bundled handler map can never drift from
+your route config. A missing entry would otherwise be a silent production 404.
+
+```bash
+# Write/refresh the map
+npx aws-lambda-api-tools generate-route-modules
+
+# Verify it's up to date (CI / pre-commit) — exits non-zero if stale,
+# and reports routes declared-but-unregistered (404s) or dead entries.
+npx aws-lambda-api-tools generate-route-modules --check
+```
+
+Options:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--routes-dir <dir>` | `src/routes` | Directory scanned recursively for `*_routes-config*` files |
+| `--out <path>` | `src/route-modules.ts` | Output file |
+| `--type-import <module>` | `aws-lambda-api-tools` | Module the `RouteModule` type is imported from |
+| `--check` | `false` | Verify only; exit non-zero if stale |
+
+It scans config files for `handlerPath` declarations (no TypeScript execution
+required), so it's safe to run as a pre-build / pre-commit step. Recommended wiring:
+
+```jsonc
+// package.json
+{
+  "scripts": {
+    "routes:gen": "aws-lambda-api-tools generate-route-modules",
+    "prebuild": "npm run routes:gen",
+    "predev": "npm run routes:gen"
+  }
+}
+```
+
+Add `aws-lambda-api-tools generate-route-modules --check` to CI / your pre-commit
+hook to fail fast if the map ever drifts.
+
+A programmatic API is also exported: `generateRouteModules`, `checkRouteModules`,
+`collectHandlerPaths`, `renderRouteModules`, and `handlerPathToIdentifier`.
 
 ### GitHub Actions IAM Setup
 

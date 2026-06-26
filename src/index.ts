@@ -17,19 +17,19 @@ export type {
   RouteConfig,
   Permission,
   SecurityConfig,
-} from './lib/types-and-interfaces';
+} from "./lib/types-and-interfaces";
 
-export { CustomError } from './lib/custom-error';
+export { CustomError } from "./lib/custom-error";
 
-export { lambdaRouteProxyEntryHandler } from './lib/lambda-route-proxy-entry-handler';
+export { lambdaRouteProxyEntryHandler } from "./lib/lambda-route-proxy-entry-handler";
 
-export { lambdaRouteProxyPathNotFound } from './lib/lambda-route-proxy-path-not-found';
+export { lambdaRouteProxyPathNotFound } from "./lib/lambda-route-proxy-path-not-found";
 
-export { schemaValidationMiddleware } from './lib/middlewares/route-module-schema-validation-middleware';
+export { schemaValidationMiddleware } from "./lib/middlewares/route-module-schema-validation-middleware";
 
-export { jwtValidationMiddleware } from './lib/middlewares/route-module-jwt-validation-middleware';
+export { jwtValidationMiddleware } from "./lib/middlewares/route-module-jwt-validation-middleware";
 
-export { 
+export {
   addResponseHeader,
   addResponseHeaders,
   addConditionalHeader,
@@ -37,10 +37,26 @@ export {
   addCacheHeaders,
   addSecurityHeaders,
   addAuthHeaders,
-} from './lib/middleware-helpers';
+} from "./lib/middleware-helpers";
 
-export { createDevServer } from './lib/dev-server';
-export type { DevServerOptions } from './lib/dev-server';
+export { createDevServer } from "./lib/dev-server";
+export type { DevServerOptions } from "./lib/dev-server";
 
-export { generateRouteSwaggerSpec, deriveTagFromPath } from './lib/swagger-route-specification-generator';
-export type { SwaggerGeneratorOptions } from './lib/swagger-route-specification-generator';
+export {
+  generateRouteSwaggerSpec,
+  deriveTagFromPath,
+} from "./lib/swagger-route-specification-generator";
+export type { SwaggerGeneratorOptions } from "./lib/swagger-route-specification-generator";
+
+export {
+  generateRouteModules,
+  checkRouteModules,
+  collectHandlerPaths,
+  renderRouteModules,
+  handlerPathToIdentifier,
+} from "./lib/route-modules-generator";
+export type {
+  RouteModulesGeneratorOptions,
+  GenerateRouteModulesResult,
+  CheckRouteModulesResult,
+} from "./lib/route-modules-generator";
