@@ -54,9 +54,25 @@ export {
   collectHandlerPaths,
   renderRouteModules,
   handlerPathToIdentifier,
+  extractNamespaceFromFilename,
 } from "./lib/route-modules-generator";
 export type {
   RouteModulesGeneratorOptions,
   GenerateRouteModulesResult,
   CheckRouteModulesResult,
 } from "./lib/route-modules-generator";
+
+/**
+ * Runtime utility: filter a RouteConfig to only include routes belonging to a
+ * specific namespace. Used by multi-Lambda deployments where each Lambda
+ * handles only its namespace's routes.
+ */
+export function filterRoutesByNamespace(
+  config: import("./lib/types-and-interfaces").RouteConfig,
+  namespace: string,
+): import("./lib/types-and-interfaces").RouteConfig {
+  return {
+    ...config,
+    routes: config.routes.filter((r) => r.namespace === namespace),
+  };
+}

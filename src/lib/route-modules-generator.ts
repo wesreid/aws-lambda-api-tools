@@ -37,6 +37,14 @@ export interface RouteModulesGeneratorOptions {
    * `routesDir` / `configFilePattern` are ignored.
    */
   handlerPaths?: string[];
+  /**
+   * Filter to a specific namespace. Only handlers from config files matching
+   * this namespace will be included. Namespace is derived from the config
+   * filename: `_routes-config.{namespace}.ts` → namespace.
+   *
+   * When not set, all handlers from all config files are included (default behavior).
+   */
+  namespace?: string;
 }
 
 const DEFAULT_CONFIG_PATTERN = /^_routes-config.*\.(ts|js)$/;
@@ -73,7 +81,20 @@ async function walk(dir: string): Promise<string[]> {
 }
 
 /**
+ * Extract namespace from a config filename.
+ * `_routes-config.platform.ts` → `'platform'`
+ * `_routes-config.ts` → `undefined` (root/default config)
+ */
+export function extractNamespaceFromFilename(filename: string): string | undefined {
+  const base = path.basename(filename);
+  const match = base.match(/^_routes-config\.([^.]+)\.(ts|js)$/);
+  return match?.[1] ?? undefined;
+}
+
+/**
  * Scan route-config files for every declared `handlerPath` (sorted, de-duped).
+ * When `options.namespace` is set, only config files matching that namespace
+ * are scanned.
  */
 export async function collectHandlerPaths(
   options: RouteModulesGeneratorOptions = {},
@@ -84,7 +105,16 @@ export async function collectHandlerPaths(
   const cwd = options.cwd ?? process.cwd();
   const routesDir = path.resolve(cwd, options.routesDir ?? DEFAULT_ROUTES_DIR);
   const pattern = options.configFilePattern ?? DEFAULT_CONFIG_PATTERN;
-  const files = (await walk(routesDir)).filter((file) => pattern.test(path.basename(file)));
+  let files = (await walk(routesDir)).filter((file) => pattern.test(path.basename(file)));
+
+  // Namespace filter: only include handlers from matching config files
+  if (options.namespace) {
+    const ns = options.namespace;
+    files = files.filter((file) => {
+      const fileNs = extractNamespaceFromFilename(file);
+      return fileNs === ns;
+    });
+  }
 
   const found = new Set<string>();
   const handlerPathRe = /handlerPath\s*:\s*['"`]([^'"`]+)['"`]/g;

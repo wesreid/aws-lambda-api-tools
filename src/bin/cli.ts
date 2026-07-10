@@ -146,11 +146,16 @@ program
     "verify the file is up to date; exit non-zero if stale (for CI/pre-commit)",
     false
   )
+  .option(
+    "--namespace <ns>",
+    "filter to a specific namespace (derived from config filename: _routes-config.{namespace}.ts)"
+  )
   .action(async (options) => {
     const opts = {
       routesDir: options.routesDir,
       outFile: options.out,
       typeImportFrom: options.typeImport,
+      namespace: options.namespace,
     };
 
     if (options.check) {

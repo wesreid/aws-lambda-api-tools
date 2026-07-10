@@ -35,6 +35,14 @@ export type ConfigRouteEntry = {
   tag?: string;
   /** Declares the async WebSocket event(s) that correspond to this route's asynchronous result */
   asyncBinding?: AsyncBindingConfig;
+  /**
+   * Namespace for multi-Lambda deployments. Routes with the same namespace are
+   * bundled and deployed together. When used with `generate-route-modules --namespace X`,
+   * only handlers belonging to that namespace are included in the generated map.
+   *
+   * If not set, auto-derived from the config filename: `_routes-config.{namespace}.ts` → namespace.
+   */
+  namespace?: string;
 };
 
 export type SecurityConfig = {
