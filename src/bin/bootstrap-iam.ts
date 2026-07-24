@@ -3,6 +3,7 @@ import { Role, WebIdentityPrincipal, ManagedPolicy, CfnOIDCProvider } from 'aws-
 import { execSync } from 'child_process';
 import { IAMClient, ListOpenIDConnectProvidersCommand, GetRoleCommand, NoSuchEntityException } from '@aws-sdk/client-iam';
 import * as readline from 'readline';
+import * as https from 'https';
 
 console.log('🚀 Starting GitHub OIDC IAM setup...\n');
 
@@ -69,7 +70,7 @@ function extractReposFromTrustPolicy(trustPolicy: any): string[] {
         const subs = statement.Condition.StringLike['token.actions.githubusercontent.com:sub'];
         const subArray = Array.isArray(subs) ? subs : [subs];
         return subArray
-          .map((sub: string) => sub.replace('repo:', '').replace(':*', ''))
+          .map((sub: string) => sub.replace(':*', ''))
           .filter((repo: string) => repo.length > 0);
       }
     }
@@ -77,6 +78,97 @@ function extractReposFromTrustPolicy(trustPolicy: any): string[] {
     console.warn('⚠️  Could not parse trust policy:', error);
   }
   return [];
+}
+
+/**
+ * Query GitHub's API for a repo's actual OIDC subject claim prefix.
+ * Newer repos use a numeric ID format (repo:org@orgId/repo@repoId)
+ * while older repos use the string format (repo:org/repo).
+ * Returns the prefix that should be used in the IAM trust policy.
+ */
+async function resolveOidcSubPrefix(repo: string): Promise<string> {
+  const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  
+  // Without a GitHub token, fall back to the legacy string format
+  if (!ghToken) {
+    return `repo:${repo}`;
+  }
+
+  return new Promise((resolve) => {
+    const options = {
+      hostname: 'api.github.com',
+      path: `/repos/${repo}/actions/oidc/customization/sub`,
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${ghToken}`,
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'aws-lambda-api-tools',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          if (res.statusCode === 200) {
+            const json = JSON.parse(data);
+            const prefix = json.sub_claim_prefix;
+            if (prefix && prefix.length > 0) {
+              resolve(prefix);
+              return;
+            }
+          }
+        } catch {
+          // fall through to default
+        }
+        // Default: legacy string format
+        resolve(`repo:${repo}`);
+      });
+    });
+
+    req.on('error', () => {
+      resolve(`repo:${repo}`);
+    });
+
+    req.setTimeout(5000, () => {
+      req.destroy();
+      resolve(`repo:${repo}`);
+    });
+
+    req.end();
+  });
+}
+
+/**
+ * Resolve OIDC sub claim prefixes for all repos.
+ * Returns the full trust policy condition values (prefix + ':*').
+ */
+async function resolveAllSubClaims(repos: string[]): Promise<string[]> {
+  console.log('\n🔍 Resolving OIDC subject claim prefixes from GitHub...');
+  
+  const results: string[] = [];
+  for (const repo of repos) {
+    const prefix = await resolveOidcSubPrefix(repo);
+    const claim = `${prefix}:*`;
+    const isNumeric = prefix.includes('@');
+    if (isNumeric) {
+      console.log(`   📌 ${repo} → ${prefix} (numeric format)`);
+    }
+    results.push(claim);
+  }
+  
+  const numericCount = results.filter(r => r.includes('@')).length;
+  if (numericCount > 0) {
+    console.log(`   ℹ️  ${numericCount} repo(s) use the newer numeric OIDC format`);
+  }
+  if (!process.env.GITHUB_TOKEN && !process.env.GH_TOKEN) {
+    console.log('   ⚠️  No GITHUB_TOKEN/GH_TOKEN found — using legacy format for all repos.');
+    console.log('      Set GITHUB_TOKEN to auto-detect numeric format for newer repos.');
+  }
+  
+  return results;
 }
 
 // Check if GitHub OIDC provider already exists
@@ -206,10 +298,14 @@ function showDiff(existing: string[], final: string[], requested: string[], mode
 const app = new App();
 
 class GithubActionsIamStack extends Stack {
-  constructor(scope: App, id: string, props?: StackProps & { finalRepos: string[] }) {
+  constructor(scope: App, id: string, props?: StackProps & { finalRepos: string[]; resolvedSubClaims: string[] }) {
     super(scope, id, props);
 
-    const { finalRepos = [] } = props || {};
+    const { finalRepos = [], resolvedSubClaims = [] } = props || {};
+    // Use resolved sub claims if available, otherwise fall back to legacy format
+    const subConditions = resolvedSubClaims.length > 0
+      ? resolvedSubClaims
+      : finalRepos.map(repo => `repo:${repo}:*`);
 
     // Reference existing OIDC provider or create new one
     const accountId = Stack.of(this).account;
@@ -240,7 +336,7 @@ class GithubActionsIamStack extends Stack {
             "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
           },
           StringLike: {
-            "token.actions.githubusercontent.com:sub": finalRepos.map(repo => `repo:${repo}:*`)
+            "token.actions.githubusercontent.com:sub": subConditions
           }
         }
       ),
@@ -329,9 +425,13 @@ async function main() {
   
   console.log('\n✅ Confirmed - proceeding with deployment...');
   
+  // Resolve actual OIDC sub claim prefixes from GitHub API
+  const resolvedSubClaims = await resolveAllSubClaims(finalRepos);
+
   // Create/update stack
   new GithubActionsIamStack(app, stackName, {
-    finalRepos: finalRepos
+    finalRepos: finalRepos,
+    resolvedSubClaims: resolvedSubClaims,
   });
 
   console.log('\n🔨 Synthesizing CloudFormation template...');
