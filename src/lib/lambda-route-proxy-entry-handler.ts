@@ -31,11 +31,17 @@ const getRouteConfigEntry = (
 
 const shouldAuthorizeRoute = (
   routesConfig: RouteConfig,
-  routeConfigEntry: ConfigRouteEntry
-) =>
-  (routesConfig.authorizeAllRoutes &&
-    routeConfigEntry.authorizeRoute !== false) ||
-  routeConfigEntry.authorizeRoute === true;
+  routeConfigEntry: ConfigRouteEntry | undefined
+) => {
+  // Unknown route (no config entry) — let routing return its standard 404/400
+  // via getRouteConfigByPath instead of crashing the auth check.
+  if (!routeConfigEntry) return false;
+  return (
+    (routesConfig.authorizeAllRoutes &&
+      routeConfigEntry.authorizeRoute !== false) ||
+    routeConfigEntry.authorizeRoute === true
+  );
+};
 
 export const getRouteModule = (
   config: RouteConfig,
