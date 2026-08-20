@@ -202,7 +202,24 @@ export const lambdaRouteProxyEntryHandler =
 
         retVal = await getRouteModuleResult(routeModule, routeArgs);
 
-        if (isProxied) {
+        // Binary pass-through: if the handler explicitly sets isBase64Encoded: true,
+        // the response is a pre-formed API Gateway response (binary proxy, file download, etc.).
+        // Pass it through without JSON-wrapping or header overriding.
+        if (retVal.isBase64Encoded === true) {
+          // Merge CORS + security headers beneath handler-provided headers so binary
+          // endpoints still get proper CORS without having to set them manually.
+          const requestOrigin = event.headers?.origin || event.headers?.Origin;
+          const corsHeaders = generateCorsHeaders(securityConfig, requestOrigin);
+          retVal = {
+            ...retVal,
+            headers: {
+              ...securityConfig.defaultHeaders,
+              ...corsHeaders,
+              ...(routeArgs.responseHeaders ?? {}),
+              ...(retVal.headers ?? {}),
+            },
+          };
+        } else if (isProxied) {
           if (retVal.statusCode && !retVal.body) {
             console.log("body must be included when status code is set", retVal);
             throw new CustomError("No body found", 500);
