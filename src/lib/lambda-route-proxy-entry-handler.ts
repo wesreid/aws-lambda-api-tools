@@ -224,7 +224,23 @@ export const lambdaRouteProxyEntryHandler =
             console.log("body must be included when status code is set", retVal);
             throw new CustomError("No body found", 500);
           } else if (retVal.statusCode && retVal.statusCode !== 200) {
-            retVal = retVal;
+            // Non-200 response from handler — ensure body is stringified for API Gateway
+            const requestOrigin = event.headers?.origin || event.headers?.Origin;
+            const corsHeaders = generateCorsHeaders(securityConfig, requestOrigin);
+            retVal = {
+              ...retVal,
+              headers: {
+                "Content-Type": "application/json",
+                ...securityConfig.defaultHeaders,
+                ...corsHeaders,
+                ...(routeArgs.responseHeaders ?? {}),
+                ...(retVal.headers ?? {}),
+              },
+              body:
+                typeof retVal.body === "object"
+                  ? JSON.stringify(retVal.body)
+                  : retVal.body,
+            };
           } else if (retVal.statusCode && retVal.body) {
             // Generate secure headers based on configuration
             const requestOrigin = event.headers?.origin || event.headers?.Origin;
@@ -255,7 +271,24 @@ export const lambdaRouteProxyEntryHandler =
           }
         } else {
           if (retVal.statusCode && retVal.statusCode !== 200) {
-            retVal = retVal;
+            // Non-200 response from handler on v2 HTTP API — ensure body is stringified
+            // and CORS headers are present so browsers can read the error response.
+            const requestOrigin = event.headers?.origin || event.headers?.Origin;
+            const corsHeaders = generateCorsHeaders(securityConfig, requestOrigin);
+            retVal = {
+              ...retVal,
+              headers: {
+                "Content-Type": "application/json",
+                ...securityConfig.defaultHeaders,
+                ...corsHeaders,
+                ...(routeArgs.responseHeaders ?? {}),
+                ...(retVal.headers ?? {}),
+              },
+              body:
+                typeof retVal.body === "object"
+                  ? JSON.stringify(retVal.body)
+                  : retVal.body,
+            };
           } else {
             retVal = {
               statusCode: 200,
@@ -268,8 +301,13 @@ export const lambdaRouteProxyEntryHandler =
         }
       } catch (error: any) {
         console.error(JSON.stringify({ error, stack: error.stack }));
+        const requestOrigin = event.headers?.origin || event.headers?.Origin;
+        const corsHeaders = (isProxied || isV2)
+          ? generateCorsHeaders(securityConfig, requestOrigin)
+          : {};
         let headers = {
           "Content-Type": "application/json",
+          ...corsHeaders,
         } as Record<string, string>;
 
         let statusCode = 500;
@@ -291,6 +329,8 @@ export const lambdaRouteProxyEntryHandler =
               "Content-Type, Authorization, X-Amz-Date, X-Api-Key, X-Amz-Security-Token",
             "Access-Control-Allow-Credentials": "true",
           };
+        } else if (isV2) {
+          statusCode = error.httpStatusCode || 500;
         }
         if (error instanceof CustomError) {
           retVal = {
