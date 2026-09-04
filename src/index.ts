@@ -17,9 +17,24 @@ export type {
   RouteConfig,
   Permission,
   SecurityConfig,
+  LoggingConfig,
 } from "./lib/types-and-interfaces";
 
 export { CustomError } from "./lib/custom-error";
+
+// Exported so consumers can apply the same masking to their own logging rather
+// than reimplementing (and inevitably missing multiValueHeaders or rawQueryString).
+export {
+  REDACTED,
+  DEFAULT_REDACTED_HEADERS,
+  DEFAULT_REDACTED_QUERY_PARAMS,
+  DEFAULT_REDACTED_BODY_FIELDS,
+  redactHeaders,
+  redactQueryParams,
+  redactBody,
+  safeEventForLog,
+  requestSummary,
+} from "./lib/log-redaction";
 
 export { lambdaRouteProxyEntryHandler } from "./lib/lambda-route-proxy-entry-handler";
 

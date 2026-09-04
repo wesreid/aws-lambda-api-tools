@@ -17,6 +17,31 @@ import {
   generateCorsHeaders,
   generateJwtRotationHeaders
 } from "./security-config-loader";
+import {
+  safeEventForLog,
+  redactBody,
+  requestSummary,
+} from "./log-redaction";
+
+/**
+ * Is verbose request logging enabled?
+ *
+ * Explicit config wins; otherwise an environment variable, so an operator can
+ * turn it on for one environment without shipping code. Defaults to OFF — this
+ * logging used to be unconditional and wrote a live Bearer token to CloudWatch on
+ * every request.
+ *
+ * Enabling debug never disables redaction; see ./log-redaction.
+ */
+const isDebugLoggingEnabled = (config: RouteConfig): boolean => {
+  if (config.logging?.debug !== undefined) return config.logging.debug;
+
+  const flag = (process.env.LAMBDA_API_TOOLS_DEBUG ?? "").toLowerCase();
+  if (["1", "true", "yes", "on"].includes(flag)) return true;
+
+  const level = (process.env.LOG_LEVEL ?? "").toLowerCase();
+  return level === "debug" || level === "trace";
+};
 
 const getRouteConfigEntry = (
   config: RouteConfig,
@@ -41,11 +66,14 @@ export const getRouteModule = (
   config: RouteConfig,
   method: string,
   path: string,
-  availableRouteModules: { [key: string]: any }
+  availableRouteModules: { [key: string]: any },
+  debug = false
 ): RouteModule => {
   const routeEntry = getRouteConfigEntry(config, method, path);
   let routeModule = null;
-  console.log(`route entry: ${JSON.stringify(routeEntry)}`);
+  // Route config is not sensitive, but logging it on every request to every route
+  // is pure volume. Debug-only.
+  if (debug) console.log(`route entry: ${JSON.stringify(routeEntry)}`);
   if (routeEntry) {
     const matchingRouteModuleMapKey = Object.keys(availableRouteModules).find(
       (k: string) => routeEntry.handlerPath.endsWith(k)
@@ -144,7 +172,28 @@ export const lambdaRouteProxyEntryHandler =
     ) => {
       // Load security configuration
       const securityConfig = config.security || loadSecurityConfig();
-      console.log(`Event Data: ${JSON.stringify(event)}`);
+      const debug = isDebugLoggingEnabled(config);
+      const logging = config.logging ?? {};
+
+      // Always-on, credential-free: without this, disabling debug would leave no
+      // record that a request happened at all.
+      if (logging.requestSummary !== false) {
+        console.log(requestSummary(event));
+      }
+
+      // Previously unconditional and unredacted, which wrote the caller's Bearer
+      // token to CloudWatch on every request. Now debug-only AND redacted.
+      if (debug) {
+        console.log(
+          `Event Data: ${JSON.stringify(
+            safeEventForLog(event, {
+              redactHeaders: logging.redactHeaders,
+              redactQueryParams: logging.redactQueryParams,
+            })
+          )}`
+        );
+      }
+
       const isV2 = (event as APIGatewayProxyEventV2).version === "2.0";
 
       const isProxied = !isV2 && event.hasOwnProperty("requestContext");
@@ -174,24 +223,33 @@ export const lambdaRouteProxyEntryHandler =
           config,
           method,
           path,
-          availableRouteModules
+          availableRouteModules,
+          debug
         );
 
-        console.log(`isBase64Encoded: ${isBase64Encoded}`);
-        console.log(`body: ${body}`);
-        
+        // Parse first, log once.
+        //
+        // This previously logged the body up to THREE times per request — `body:`,
+        // then `parsing body directly:`/`decodedBody:`, then `parsedBody:` — all
+        // unconditional and unredacted. That is a request-payload leak (bodies
+        // carry credentials on auth routes and personal data on ingest routes)
+        // and it tripled log volume for no diagnostic gain, since the three lines
+        // held the same content.
         let parsedBody = undefined;
         if (body) {
-          if (isBase64Encoded) {
-            const decodedBody = Buffer.from(body, "base64").toString("utf-8");
-            console.log(`decodedBody: ${decodedBody}`);
-            parsedBody = JSON.parse(decodedBody);
-          } else {
-            console.log(`parsing body directly: ${body}`);
-            parsedBody = JSON.parse(body);
-          }
+          const rawBody = isBase64Encoded
+            ? Buffer.from(body, "base64").toString("utf-8")
+            : body;
+          parsedBody = JSON.parse(rawBody);
         }
-        console.log(`parsedBody: ${JSON.stringify(parsedBody)}`);
+
+        if (debug) {
+          console.log(
+            `body (isBase64Encoded=${isBase64Encoded}): ${JSON.stringify(
+              redactBody(parsedBody, logging.redactBodyFields)
+            )}`
+          );
+        }
 
         const routeArgs: RouteArguments = {
           query: queryStringParameters,
@@ -221,7 +279,18 @@ export const lambdaRouteProxyEntryHandler =
           };
         } else if (isProxied) {
           if (retVal.statusCode && !retVal.body) {
-            console.log("body must be included when status code is set", retVal);
+            // Log the shape, not the contents. This is a handler misconfiguration,
+            // so the useful signal is which route returned what status with which
+            // keys — dumping the whole response object risks emitting response
+            // payload (tokens on auth routes, personal data elsewhere) into logs.
+            console.error(
+              JSON.stringify({
+                message: "body must be included when status code is set",
+                request: requestSummary(event),
+                statusCode: retVal.statusCode,
+                responseKeys: Object.keys(retVal ?? {}),
+              })
+            );
             throw new CustomError("No body found", 500);
           } else if (retVal.statusCode && retVal.statusCode !== 200) {
             // Non-200 response from handler — ensure body is stringified for API Gateway
@@ -300,7 +369,19 @@ export const lambdaRouteProxyEntryHandler =
           }
         }
       } catch (error: any) {
-        console.error(JSON.stringify({ error, stack: error.stack }));
+        // `Error.message` and `Error.stack` are NON-ENUMERABLE, so the previous
+        // `JSON.stringify({ error, stack: error.stack })` serialized `error` as
+        // `{}` and threw the message away — every failure logged as
+        // `{"error":{},"stack":"..."}`. Pull the fields out explicitly.
+        console.error(
+          JSON.stringify({
+            name: error?.name,
+            message: error?.message,
+            httpStatusCode: error?.httpStatusCode ?? error?._httpStatusCode,
+            stack: error?.stack,
+            request: requestSummary(event),
+          })
+        );
         const requestOrigin = event.headers?.origin || event.headers?.Origin;
         const corsHeaders = (isProxied || isV2)
           ? generateCorsHeaders(securityConfig, requestOrigin)

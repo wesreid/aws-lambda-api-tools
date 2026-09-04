@@ -62,11 +62,38 @@ export type SecurityConfig = {
   };
 };
 
+export type LoggingConfig = {
+  /**
+   * Verbose request logging: the (redacted) event and the request body.
+   *
+   * Defaults to FALSE. Previously this logging was unconditional, which wrote a
+   * live Bearer token to CloudWatch on every request to every route.
+   *
+   * Can also be enabled per-environment without a code change via
+   * `LAMBDA_API_TOOLS_DEBUG=true` or `LOG_LEVEL=debug`. Note that enabling debug
+   * does NOT disable redaction — secrets stay masked either way.
+   */
+  debug?: boolean;
+  /** Extra header names to mask, merged with the built-in list. */
+  redactHeaders?: string[];
+  /** Extra query parameter names to mask, merged with the built-in list. */
+  redactQueryParams?: string[];
+  /** Extra body field names to mask, merged with the built-in list. */
+  redactBodyFields?: string[];
+  /**
+   * Emit a one-line `METHOD /path requestId=... sourceIp=...` summary for every
+   * request. Default TRUE, so turning debug off does not leave operators with no
+   * record that a request occurred. Contains no credential or payload.
+   */
+  requestSummary?: boolean;
+};
+
 export type RouteConfig = {
   authorizeAllRoutes?: boolean;
   routes: Array<ConfigRouteEntry>;
   routesBaseUrlPath?: string; // Optional base URL path (e.g., '/api/v1')
   security?: SecurityConfig;
+  logging?: LoggingConfig;
 };
 
 export type RouteArguments = {
