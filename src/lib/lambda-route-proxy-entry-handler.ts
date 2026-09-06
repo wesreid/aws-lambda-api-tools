@@ -56,11 +56,12 @@ const getRouteConfigEntry = (
 
 const shouldAuthorizeRoute = (
   routesConfig: RouteConfig,
-  routeConfigEntry: ConfigRouteEntry
+  routeConfigEntry: ConfigRouteEntry | undefined
 ) =>
-  (routesConfig.authorizeAllRoutes &&
+  routeConfigEntry != null &&
+  ((routesConfig.authorizeAllRoutes &&
     routeConfigEntry.authorizeRoute !== false) ||
-  routeConfigEntry.authorizeRoute === true;
+  routeConfigEntry.authorizeRoute === true);
 
 export const getRouteModule = (
   config: RouteConfig,
@@ -104,7 +105,8 @@ export const getRouteModuleResult = async (
 };
 
 function pathToRegex(path: string): string {
-  // Convert route path to regex pattern
+  // Convert route path to regex pattern.
+  // Always work with a leading slash — callers normalize both sides.
   return path
     .replace(/\//g, "\\/") // Escape forward slashes
     .replace(/{([^}]+)}/g, "(?<$1>[^/]+)"); // Convert {param} to named capture groups
@@ -145,24 +147,64 @@ export function getRouteConfigByPath(
   method: string,
   configs: ConfigRouteEntry[]
 ): ConfigRouteEntry & { params?: { [key: string]: string } } {
-  eventPath = eventPath.replace(/\?.*$/, ""); // Remove query string
-  const normalizedPath = eventPath.replace(/^\//, ""); // Remove leading slash
-  for (const config of configs) {
-    const pattern = pathToRegex(config.path);
-    const regex = new RegExp(`^${pattern}$`);
-    const match = regex.exec(normalizedPath);
+  eventPath = eventPath.replace(/\?.*$/, ""); // strip query string
 
-    if (match && method === config.method) {
-      const params = match.groups || {};
-      return { ...config, params };
+  // Collect all matching candidates with their specificity scores
+  const candidates: Array<{
+    config: ConfigRouteEntry;
+    params: { [key: string]: string };
+    staticSegments: number;
+    totalSegments: number;
+    index: number;
+  }> = [];
+
+  for (let i = 0; i < configs.length; i++) {
+    const cfg = configs[i];
+    if (!cfg) continue;
+
+    if (cfg.method.toUpperCase() !== method.toUpperCase() && cfg.method !== "ANY") {
+      continue;
     }
 
-    if (regex.test(eventPath) && config.method === method) {
-      return config;
+    // Normalize both paths: ensure leading slash, compare consistently
+    const normalizedEvent = "/" + eventPath.replace(/^\//, "");
+    const normalizedConfig = "/" + cfg.path.replace(/^\//, "");
+
+    const pattern = pathToRegex(normalizedConfig);
+    const regex = new RegExp(`^${pattern}$`);
+    const match = regex.exec(normalizedEvent);
+
+    if (match) {
+      const params = match.groups || {};
+
+      // Count specificity: static segments beat param segments
+      const segments = normalizedConfig.split("/").filter(Boolean);
+      const staticSegments = segments.filter((s) => !s.startsWith("{")).length;
+
+      candidates.push({
+        config: cfg,
+        params,
+        staticSegments,
+        totalSegments: segments.length,
+        index: i,
+      });
     }
   }
 
-  throw new CustomError(JSON.stringify({ message: "path no found" }), 400);
+  if (candidates.length === 0) {
+    throw new CustomError(JSON.stringify({ message: "Not found" }), 404);
+  }
+
+  // Sort: most static segments first (most specific wins).
+  // On tie: more total segments first. On tie: declaration order.
+  candidates.sort((a, b) => {
+    if (b.staticSegments !== a.staticSegments) return b.staticSegments - a.staticSegments;
+    if (b.totalSegments !== a.totalSegments) return b.totalSegments - a.totalSegments;
+    return a.index - b.index;
+  });
+
+  const winner = candidates[0]!;
+  return { ...winner.config, params: winner.params };
 }
 
 export const lambdaRouteProxyEntryHandler =
@@ -198,6 +240,174 @@ export const lambdaRouteProxyEntryHandler =
 
       const isProxied = !isV2 && event.hasOwnProperty("requestContext");
 
+      // --- v2 rawPath mode: resolve actual path instead of greedy routeKey ---
+      // When useRawPath is true and the event is v2, routeKey may be
+      // "ANY /prefix/{proxy+}" which is useless for resolution. Use rawPath +
+      // requestContext.http.method to resolve via getRouteConfigByPath() and
+      // short-circuit 404 before auth or module loading.
+      if (isV2 && config.useRawPath) {
+        const v2Event = event as APIGatewayProxyEventV2;
+        const resolvedMethod = v2Event.requestContext.http.method;
+        let resolvedRoute: ConfigRouteEntry & { params?: { [key: string]: string } };
+        try {
+          resolvedRoute = getRouteConfigByPath(
+            v2Event.rawPath,
+            resolvedMethod,
+            config.routes
+          );
+        } catch (err: any) {
+          // Early-exit 404: don't invoke auth, don't load route module, don't
+          // initialise Prisma. Return immediately to save Lambda invocation cost.
+          if (err instanceof CustomError && (err.httpStatusCode === 404 || err._httpStatusCode === 404)) {
+            const requestOrigin = event.headers?.origin || event.headers?.Origin;
+            const corsHeaders = generateCorsHeaders(securityConfig, requestOrigin);
+            return {
+              statusCode: 404,
+              headers: {
+                "Content-Type": "application/json",
+                ...corsHeaders,
+              },
+              body: err.message,
+            };
+          }
+          throw err;
+        }
+
+        // Build a synthetic RouteEvent using the resolved route info
+        const newEvent: RouteEvent = {
+          routeKey: `${resolvedMethod} ${resolvedRoute.path}`,
+          queryStringParameters:
+            v2Event.queryStringParameters ??
+            ({} as RouteEvent["queryStringParameters"]),
+          pathParameters: resolvedRoute.params ?? {},
+          body: v2Event.body,
+          isBase64Encoded: v2Event.isBase64Encoded,
+        };
+
+        const {
+          routeKey,
+          queryStringParameters,
+          pathParameters,
+          body,
+          isBase64Encoded: isBase64,
+        } = newEvent;
+
+        let retVal: any = {};
+        try {
+          const [method = "", path = ""] = routeKey.split(" ");
+          if (
+            shouldAuthorizeRoute(config, getRouteConfigEntry(config, method, path))
+          ) {
+            await authorizeRoute(event);
+          }
+
+          const routeModule = getRouteModule(
+            config,
+            method,
+            path,
+            availableRouteModules,
+            debug
+          );
+
+          let parsedBody = undefined;
+          if (body) {
+            const rawBody = isBase64
+              ? Buffer.from(body, "base64").toString("utf-8")
+              : body;
+            parsedBody = JSON.parse(rawBody);
+          }
+
+          if (debug) {
+            console.log(
+              `body (isBase64Encoded=${isBase64}): ${JSON.stringify(
+                redactBody(parsedBody, logging.redactBodyFields)
+              )}`
+            );
+          }
+
+          const routeArgs: RouteArguments = {
+            query: queryStringParameters,
+            params: pathParameters,
+            body: parsedBody,
+            rawEvent: event,
+          };
+
+          retVal = await getRouteModuleResult(routeModule, routeArgs);
+
+          if (retVal.isBase64Encoded === true) {
+            const requestOrigin = event.headers?.origin || event.headers?.Origin;
+            const corsHeaders = generateCorsHeaders(securityConfig, requestOrigin);
+            retVal = {
+              ...retVal,
+              headers: {
+                ...securityConfig.defaultHeaders,
+                ...corsHeaders,
+                ...(routeArgs.responseHeaders ?? {}),
+                ...(retVal.headers ?? {}),
+              },
+            };
+          } else if (retVal.statusCode && retVal.statusCode !== 200) {
+            const requestOrigin = event.headers?.origin || event.headers?.Origin;
+            const corsHeaders = generateCorsHeaders(securityConfig, requestOrigin);
+            retVal = {
+              ...retVal,
+              headers: {
+                "Content-Type": "application/json",
+                ...securityConfig.defaultHeaders,
+                ...corsHeaders,
+                ...(routeArgs.responseHeaders ?? {}),
+                ...(retVal.headers ?? {}),
+              },
+              body:
+                typeof retVal.body === "object"
+                  ? JSON.stringify(retVal.body)
+                  : retVal.body,
+            };
+          } else {
+            retVal = {
+              statusCode: 200,
+              body: JSON.stringify(retVal),
+              headers: {
+                "Content-Type": "application/json",
+              },
+            };
+          }
+        } catch (error: any) {
+          console.error(
+            JSON.stringify({
+              name: error?.name,
+              message: error?.message,
+              httpStatusCode: error?.httpStatusCode ?? error?._httpStatusCode,
+              stack: error?.stack,
+              request: requestSummary(event),
+            })
+          );
+          const requestOrigin = event.headers?.origin || event.headers?.Origin;
+          const corsHeaders = generateCorsHeaders(securityConfig, requestOrigin);
+          let headers = {
+            "Content-Type": "application/json",
+            ...corsHeaders,
+          } as Record<string, string>;
+
+          const statusCode = error.httpStatusCode || 500;
+          if (error instanceof CustomError) {
+            retVal = {
+              statusCode: error.httpStatusCode || error._httpStatusCode || 500,
+              headers,
+              body: error.message,
+            };
+          } else {
+            retVal = {
+              statusCode,
+              headers,
+              body: error.message || JSON.stringify(error),
+            };
+          }
+        }
+        return retVal;
+      }
+
+      // --- Standard (non-rawPath) flow ---
       const newEvent = isV2
         ? v2ApiGatewayEvent(event as APIGatewayProxyEventV2)
         : v1ApiGatewayEvent(event as APIGatewayProxyEvent, config);

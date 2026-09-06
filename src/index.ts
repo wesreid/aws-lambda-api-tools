@@ -36,7 +36,7 @@ export {
   requestSummary,
 } from "./lib/log-redaction";
 
-export { lambdaRouteProxyEntryHandler } from "./lib/lambda-route-proxy-entry-handler";
+export { lambdaRouteProxyEntryHandler, getRouteConfigByPath } from "./lib/lambda-route-proxy-entry-handler";
 
 export { lambdaRouteProxyPathNotFound } from "./lib/lambda-route-proxy-path-not-found";
 

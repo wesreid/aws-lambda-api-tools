@@ -94,6 +94,12 @@ export type RouteConfig = {
   routesBaseUrlPath?: string; // Optional base URL path (e.g., '/api/v1')
   security?: SecurityConfig;
   logging?: LoggingConfig;
+  /**
+   * When true, v2 HTTP API events use `event.rawPath` + `event.requestContext.http.method`
+   * instead of `event.routeKey` for route resolution. Required for greedy proxy routes
+   * where routeKey is `"ANY /prefix/{proxy+}"` rather than `"GET /actual/path"`.
+   */
+  useRawPath?: boolean;
 };
 
 export type RouteArguments = {
