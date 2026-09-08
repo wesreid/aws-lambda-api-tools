@@ -549,9 +549,17 @@ export const lambdaRouteProxyEntryHandler =
             };
           }
         } else {
-          if (retVal.statusCode && retVal.statusCode !== 200) {
-            // Non-200 response from handler on v2 HTTP API — ensure body is stringified
-            // and CORS headers are present so browsers can read the error response.
+          if (
+            retVal.statusCode &&
+            (retVal.statusCode !== 200 || retVal.body !== undefined)
+          ) {
+            // Explicit response envelope from the handler on v2 HTTP API
+            // (any non-200, or a 200 that carries its own body): pass it
+            // through with headers merged, instead of double-wrapping.
+            // Previously a 200 envelope was re-wrapped, which dropped the
+            // handler's headers and serialized the whole envelope into the
+            // body — breaking, e.g., challenge-echo handshakes that must
+            // answer 200 with a specific response header.
             const requestOrigin = event.headers?.origin || event.headers?.Origin;
             const corsHeaders = generateCorsHeaders(securityConfig, requestOrigin);
             retVal = {
