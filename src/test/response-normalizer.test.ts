@@ -167,6 +167,26 @@ describe("finalizeApiGatewayResponse", () => {
     expect(res.body).toBe(JSON.stringify({ body: "post text" }));
   });
 
+  it("does not mark plain data as base64 because it has that field name", () => {
+    // The guard this pins: a domain object carrying `isBase64Encoded` is
+    // still data. Honouring it would tell API Gateway to base64-decode a
+    // JSON payload.
+    const res = finalizeApiGatewayResponse(
+      { isBase64Encoded: true, data: "plain" },
+      ctx()
+    );
+    expect(res.isBase64Encoded).toBe(false);
+    expect(res.body).toBe(JSON.stringify({ isBase64Encoded: true, data: "plain" }));
+  });
+
+  it("always returns a boolean isBase64Encoded", () => {
+    const res = finalizeApiGatewayResponse(
+      { statusCode: 200, body: "x", isBase64Encoded: "yes" as any },
+      ctx()
+    );
+    expect(res.isBase64Encoded).toBe(false);
+  });
+
   it("treats a non-numeric statusCode as data, not an envelope", () => {
     const res = finalizeApiGatewayResponse(
       { statusCode: "200", body: "x" },

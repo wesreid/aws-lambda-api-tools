@@ -234,10 +234,16 @@ export function finalizeApiGatewayResponse(
     routeData?: any;
   }
 ): any {
-  const isEnvelope =
+  // Only an explicit envelope may set status, headers, cookies or base64.
+  // A domain object that happens to carry a `body` or `isBase64Encoded`
+  // field is data: treating it as an envelope would mislabel a JSON
+  // payload as base64 and hand API Gateway an undecodable response.
+  const envelope: any =
     retVal !== null &&
     typeof retVal === "object" &&
-    typeof retVal.statusCode === "number";
+    typeof retVal.statusCode === "number"
+      ? retVal
+      : null;
 
   const requestOrigin = ctx.event.headers?.origin || ctx.event.headers?.Origin;
   const corsHeaders = generateCorsHeaders(ctx.securityConfig, requestOrigin);
@@ -246,11 +252,9 @@ export function finalizeApiGatewayResponse(
     ctx.routeData
   );
 
-  const rawBody = isEnvelope ? retVal.body : retVal;
-
   return {
-    statusCode: isEnvelope ? retVal.statusCode : 200,
-    isBase64Encoded: isEnvelope ? retVal.isBase64Encoded ?? false : false,
+    statusCode: envelope?.statusCode ?? 200,
+    isBase64Encoded: envelope?.isBase64Encoded === true,
     headers: {
       "Content-Type": "application/json",
       // 1. Default security headers from config (lowest priority)
@@ -262,19 +266,22 @@ export function finalizeApiGatewayResponse(
       // 4. Middleware-provided headers
       ...(ctx.responseHeaders ?? {}),
       // 5. Handler-provided headers (highest priority - can override everything)
-      ...(isEnvelope ? retVal.headers ?? {} : {}),
+      ...(envelope?.headers ?? {}),
     },
-    // API Gateway requires `body` to be a string; anything else is a
-    // malformed-response 502. Stringify here so no caller has to remember.
-    body:
-      rawBody === undefined || rawBody === null
-        ? ""
-        : typeof rawBody === "string"
-          ? rawBody
-          : JSON.stringify(rawBody),
+    body: serializeResponseBody(envelope ? envelope.body : retVal),
     // v2 HTTP APIs support a top-level `cookies` array.
-    ...(isEnvelope && retVal.cookies ? { cookies: retVal.cookies } : {}),
+    ...(envelope?.cookies ? { cookies: envelope.cookies } : {}),
   };
+}
+
+/**
+ * API Gateway requires `body` to be a string; anything else comes back to
+ * the caller as a malformed-response 502. Serializing in one place means
+ * no handler or branch has to remember.
+ */
+function serializeResponseBody(body: unknown): string {
+  if (body === undefined || body === null) return "";
+  return typeof body === "string" ? body : JSON.stringify(body);
 }
 
 export const lambdaRouteProxyEntryHandler =
