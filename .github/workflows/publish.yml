@@ -41,12 +41,18 @@ jobs:
           git add .
           git commit -m "chore: update built files" || echo "No changes to commit"
       
+      # The version commit stays local until npm has the package. Pushing it
+      # first let a failed publish leave main on a version npm never received
+      # (0.1.49).
       - name: Bump version
-        run: |
-          npm run bump-version
-          git push
-      
+        run: npm run bump-version
+
       - name: Publish to NPM
         run: npm publish
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} 
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # npm now has this version, so it must reach main: if main moved during
+      # the run, replay the version commit on top of it instead of failing.
+      - name: Push version commit
+        run: git push || (git pull --rebase origin main && git push)
