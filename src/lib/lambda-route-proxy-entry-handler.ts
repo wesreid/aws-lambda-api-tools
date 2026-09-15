@@ -436,31 +436,13 @@ export const lambdaRouteProxyEntryHandler =
                 ...(retVal.headers ?? {}),
               },
             };
-          } else if (retVal.statusCode && retVal.statusCode !== 200) {
-            const requestOrigin = event.headers?.origin || event.headers?.Origin;
-            const corsHeaders = generateCorsHeaders(securityConfig, requestOrigin);
-            retVal = {
-              ...retVal,
-              headers: {
-                "Content-Type": "application/json",
-                ...securityConfig.defaultHeaders,
-                ...corsHeaders,
-                ...(routeArgs.responseHeaders ?? {}),
-                ...(retVal.headers ?? {}),
-              },
-              body:
-                typeof retVal.body === "object"
-                  ? JSON.stringify(retVal.body)
-                  : retVal.body,
-            };
           } else {
-            retVal = {
-              statusCode: 200,
-              body: JSON.stringify(retVal),
-              headers: {
-                "Content-Type": "application/json",
-              },
-            };
+            retVal = finalizeApiGatewayResponse(retVal, {
+              event,
+              securityConfig,
+              responseHeaders: routeArgs.responseHeaders,
+              routeData: routeArgs.routeData,
+            });
           }
         } catch (error: any) {
           console.error(
