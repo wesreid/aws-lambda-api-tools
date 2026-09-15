@@ -1,4 +1,8 @@
-import { finalizeApiGatewayResponse } from "../lib/lambda-route-proxy-entry-handler";
+import {
+  finalizeApiGatewayResponse,
+  lambdaRouteProxyEntryHandler,
+} from "../lib/lambda-route-proxy-entry-handler";
+import type { RouteModule } from "../lib/types-and-interfaces";
 
 /**
  * The response path every consumer touches, and the one place where the
@@ -194,5 +198,86 @@ describe("finalizeApiGatewayResponse", () => {
     );
     expect(res.statusCode).toBe(200);
     expect(res.body).toBe(JSON.stringify({ statusCode: "200", body: "x" }));
+  });
+});
+
+/**
+ * The normalizer has to be reached from BOTH resolution paths.
+ *
+ * `useRawPath` mode (added for greedy `{proxy+}` routes) carried its own
+ * copy of the response shaping, so the first pass at this fix corrected
+ * only the standard flow and left the same bug live for anyone using
+ * rawPath routing.
+ */
+describe("lambdaRouteProxyEntryHandler — envelope handling per resolution mode", () => {
+  const echoModule: RouteModule = {
+    routeChain: [
+      async () => ({
+        statusCode: 200,
+        headers: { "X-Hook-Secret": "echo-me" },
+        body: JSON.stringify({ received: true }),
+      }),
+    ],
+    routeSchema: {},
+  };
+
+  const route = (path: string) =>
+    ({
+      method: "POST",
+      path,
+      handlerPath: "src/routes/hooks/post-hook",
+      swaggerMethodName: "postHook",
+      authorizeRoute: false,
+    }) as any;
+
+  const modules = { "hooks/post-hook": echoModule };
+
+  function v2Event(routeKey: string) {
+    return {
+      version: "2.0",
+      routeKey,
+      rawPath: "/api/v1/hooks/abc",
+      rawQueryString: "",
+      headers: { "content-type": "application/json" },
+      queryStringParameters: {},
+      pathParameters: {},
+      body: null,
+      isBase64Encoded: false,
+      requestContext: {
+        requestId: "req-1",
+        http: { method: "POST", path: "/api/v1/hooks/abc", sourceIp: "1.2.3.4" },
+      },
+    } as any;
+  }
+
+  it("keeps a 200 envelope's headers in rawPath mode", async () => {
+    const handler = lambdaRouteProxyEntryHandler(
+      {
+        authorizeAllRoutes: false,
+        useRawPath: true,
+        routes: [route("/api/v1/hooks/{hookId}")],
+        logging: { requestSummary: false },
+      } as any,
+      modules
+    );
+    const res: any = await handler(v2Event("ANY /api/v1/{proxy+}"));
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["X-Hook-Secret"]).toBe("echo-me");
+    expect(JSON.parse(res.body)).toEqual({ received: true });
+  });
+
+  it("keeps a 200 envelope's headers in standard routeKey mode", async () => {
+    const handler = lambdaRouteProxyEntryHandler(
+      {
+        authorizeAllRoutes: false,
+        routes: [route("/api/v1/hooks/abc")],
+        logging: { requestSummary: false },
+      } as any,
+      modules
+    );
+    const res: any = await handler(v2Event("POST /api/v1/hooks/abc"));
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["X-Hook-Secret"]).toBe("echo-me");
+    expect(JSON.parse(res.body)).toEqual({ received: true });
   });
 });
