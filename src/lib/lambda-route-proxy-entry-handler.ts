@@ -207,6 +207,83 @@ export function getRouteConfigByPath(
   return { ...winner.config, params: winner.params };
 }
 
+/**
+ * Shape a route handler's return value into an API Gateway response.
+ *
+ * One normalizer for both payload formats. The discriminator is the SHAPE
+ * of the return value — does it carry a numeric `statusCode` — not its
+ * status code. Using `statusCode !== 200` to mean "this is an explicit
+ * envelope" is a category error: it makes a 200 envelope indistinguishable
+ * from domain data, so it gets re-wrapped, the handler's headers are
+ * dropped and the envelope itself is serialized into the body. That broke
+ * every challenge-echo handshake (SmartRecruiters' `X-Hook-Secret`,
+ * Slack's `url_verification`) and anything else needing header control on
+ * a success: `Set-Cookie` on login, a non-JSON `Content-Type` for a CSV or
+ * PDF, `Cache-Control`, rate-limit headers.
+ *
+ * Because every response now flows through here, the header precedence
+ * chain and body serialization apply uniformly, rather than only in
+ * whichever branch happened to implement them.
+ */
+export function finalizeApiGatewayResponse(
+  retVal: any,
+  ctx: {
+    event: any;
+    securityConfig: any;
+    responseHeaders?: { [key: string]: string };
+    routeData?: any;
+  }
+): any {
+  // Only an explicit envelope may set status, headers, cookies or base64.
+  // A domain object that happens to carry a `body` or `isBase64Encoded`
+  // field is data: treating it as an envelope would mislabel a JSON
+  // payload as base64 and hand API Gateway an undecodable response.
+  const envelope: any =
+    retVal !== null &&
+    typeof retVal === "object" &&
+    typeof retVal.statusCode === "number"
+      ? retVal
+      : null;
+
+  const requestOrigin = ctx.event.headers?.origin || ctx.event.headers?.Origin;
+  const corsHeaders = generateCorsHeaders(ctx.securityConfig, requestOrigin);
+  const jwtRotationHeaders = generateJwtRotationHeaders(
+    ctx.securityConfig,
+    ctx.routeData
+  );
+
+  return {
+    statusCode: envelope?.statusCode ?? 200,
+    isBase64Encoded: envelope?.isBase64Encoded === true,
+    headers: {
+      "Content-Type": "application/json",
+      // 1. Default security headers from config (lowest priority)
+      ...ctx.securityConfig.defaultHeaders,
+      // 2. CORS headers (only if origin is allowed)
+      ...corsHeaders,
+      // 3. JWT rotation headers (if needed)
+      ...jwtRotationHeaders,
+      // 4. Middleware-provided headers
+      ...(ctx.responseHeaders ?? {}),
+      // 5. Handler-provided headers (highest priority - can override everything)
+      ...(envelope?.headers ?? {}),
+    },
+    body: serializeResponseBody(envelope ? envelope.body : retVal),
+    // v2 HTTP APIs support a top-level `cookies` array.
+    ...(envelope?.cookies ? { cookies: envelope.cookies } : {}),
+  };
+}
+
+/**
+ * API Gateway requires `body` to be a string; anything else comes back to
+ * the caller as a malformed-response 502. Serializing in one place means
+ * no handler or branch has to remember.
+ */
+function serializeResponseBody(body: unknown): string {
+  if (body === undefined || body === null) return "";
+  return typeof body === "string" ? body : JSON.stringify(body);
+}
+
 export const lambdaRouteProxyEntryHandler =
   (config: RouteConfig, availableRouteModules: { [key: string]: any }) =>
     async (
@@ -487,8 +564,12 @@ export const lambdaRouteProxyEntryHandler =
               ...(retVal.headers ?? {}),
             },
           };
-        } else if (isProxied) {
-          if (retVal.statusCode && !retVal.body) {
+        } else {
+          // Handler misconfiguration guard, unchanged and still v1-only:
+          // a REST-proxy handler that sets a status but no body is almost
+          // always a mistake, and this has thrown since before the
+          // unified normalizer existed.
+          if (isProxied && retVal?.statusCode && !retVal?.body) {
             // Log the shape, not the contents. This is a handler misconfiguration,
             // so the useful signal is which route returned what status with which
             // keys — dumping the whole response object risks emitting response
@@ -502,81 +583,14 @@ export const lambdaRouteProxyEntryHandler =
               })
             );
             throw new CustomError("No body found", 500);
-          } else if (retVal.statusCode && retVal.statusCode !== 200) {
-            // Non-200 response from handler — ensure body is stringified for API Gateway
-            const requestOrigin = event.headers?.origin || event.headers?.Origin;
-            const corsHeaders = generateCorsHeaders(securityConfig, requestOrigin);
-            retVal = {
-              ...retVal,
-              headers: {
-                "Content-Type": "application/json",
-                ...securityConfig.defaultHeaders,
-                ...corsHeaders,
-                ...(routeArgs.responseHeaders ?? {}),
-                ...(retVal.headers ?? {}),
-              },
-              body:
-                typeof retVal.body === "object"
-                  ? JSON.stringify(retVal.body)
-                  : retVal.body,
-            };
-          } else if (retVal.statusCode && retVal.body) {
-            // Generate secure headers based on configuration
-            const requestOrigin = event.headers?.origin || event.headers?.Origin;
-            const corsHeaders = generateCorsHeaders(securityConfig, requestOrigin);
-            const jwtRotationHeaders = generateJwtRotationHeaders(securityConfig, routeArgs.routeData);
+          }
 
-            retVal = {
-              ...retVal,
-              isBase64Encoded: false,
-              headers: {
-                "Content-Type": "application/json",
-                // 1. Default security headers from config (lowest priority)
-                ...securityConfig.defaultHeaders,
-                // 2. CORS headers (only if origin is allowed)
-                ...corsHeaders,
-                // 3. JWT rotation headers (if needed)
-                ...jwtRotationHeaders,
-                // 4. Middleware-provided headers (higher priority)
-                ...(routeArgs.responseHeaders ?? {}),
-                // 5. Handler-provided headers (highest priority - can override everything)
-                ...(retVal.headers ?? {}),
-              },
-              body:
-                typeof retVal.body === "object"
-                  ? JSON.stringify(retVal.body)
-                  : retVal.body,
-            };
-          }
-        } else {
-          if (retVal.statusCode && retVal.statusCode !== 200) {
-            // Non-200 response from handler on v2 HTTP API — ensure body is stringified
-            // and CORS headers are present so browsers can read the error response.
-            const requestOrigin = event.headers?.origin || event.headers?.Origin;
-            const corsHeaders = generateCorsHeaders(securityConfig, requestOrigin);
-            retVal = {
-              ...retVal,
-              headers: {
-                "Content-Type": "application/json",
-                ...securityConfig.defaultHeaders,
-                ...corsHeaders,
-                ...(routeArgs.responseHeaders ?? {}),
-                ...(retVal.headers ?? {}),
-              },
-              body:
-                typeof retVal.body === "object"
-                  ? JSON.stringify(retVal.body)
-                  : retVal.body,
-            };
-          } else {
-            retVal = {
-              statusCode: 200,
-              body: JSON.stringify(retVal),
-              headers: {
-                "Content-Type": "application/json",
-              },
-            };
-          }
+          retVal = finalizeApiGatewayResponse(retVal, {
+            event,
+            securityConfig,
+            responseHeaders: routeArgs.responseHeaders,
+            routeData: routeArgs.routeData,
+          });
         }
       } catch (error: any) {
         // `Error.message` and `Error.stack` are NON-ENUMERABLE, so the previous
