@@ -338,6 +338,19 @@ export const lambdaRouteProxyEntryHandler =
           if (err instanceof CustomError && (err.httpStatusCode === 404 || err._httpStatusCode === 404)) {
             const requestOrigin = event.headers?.origin || event.headers?.Origin;
             const corsHeaders = generateCorsHeaders(securityConfig, requestOrigin);
+
+            // CORS preflight with no declared OPTIONS route. An HTTP API answers
+            // preflights from its CORS configuration only when no route matches
+            // the request; a greedy `ANY` route matches OPTIONS, so preflights
+            // reach the Lambda instead. A 404 fails the preflight, and the
+            // browser then blocks every request that sends a non-simple header
+            // such as Authorization. A preflight grants nothing: the request
+            // that follows still resolves, authenticates and 404s normally.
+            // API Gateway adds its configured CORS headers to this response.
+            if (resolvedMethod.toUpperCase() === "OPTIONS") {
+              return { statusCode: 204, headers: { ...corsHeaders }, body: "" };
+            }
+
             return {
               statusCode: 404,
               headers: {

@@ -38,6 +38,15 @@ export {
 
 export { lambdaRouteProxyEntryHandler, getRouteConfigByPath } from "./lib/lambda-route-proxy-entry-handler";
 
+// Greedy-proxy route registration: derive the API Gateway routes for a route
+// table (useRawPath mode), and check that every route still resolves to itself.
+export {
+  urlGroupOf,
+  greedyPathsFor,
+  deriveUrlGroups,
+  findMisroutedRoutes,
+} from "./lib/greedy-routes";
+
 export { lambdaRouteProxyPathNotFound } from "./lib/lambda-route-proxy-path-not-found";
 
 export { schemaValidationMiddleware } from "./lib/middlewares/route-module-schema-validation-middleware";

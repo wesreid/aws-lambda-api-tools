@@ -286,8 +286,58 @@ type RouteConfig = {
   routesBaseUrlPath?: string;
   /** Security configuration */
   security?: SecurityConfig;
+  /** Request logging: debug verbosity and extra redaction (secrets are always masked) */
+  logging?: LoggingConfig;
+  /** Resolve v2 events from rawPath instead of routeKey (required behind greedy routes) */
+  useRawPath?: boolean;
 };
 ```
+
+---
+
+## Greedy Proxy Routes
+
+The router resolves every request itself, so API Gateway does not need one route per
+endpoint. Registering one per endpoint does not scale: an HTTP API allows 300 routes by
+default, and each route is a CloudFormation resource against a stack's 500-resource limit.
+
+With `useRawPath: true`, register two `ANY` routes per **URL group** (the first segment after
+the base path) instead:
+
+```typescript
+import { deriveUrlGroups, greedyPathsFor, findMisroutedRoutes } from 'aws-lambda-api-tools';
+
+// CDK: two routes per group, e.g. ANY /api/v1/voices and ANY /api/v1/voices/{proxy+}
+for (const group of deriveUrlGroups(routeConfig.routes, routeConfig.routesBaseUrlPath)) {
+  for (const path of greedyPathsFor(group)) {
+    new apigatewayv2.HttpRoute(this, `greedy-${path.replace(/[^a-zA-Z0-9]/g, '-')}`, {
+      httpApi,
+      integration,
+      routeKey: apigatewayv2.HttpRouteKey.with(path, apigatewayv2.HttpMethod.ANY),
+    });
+  }
+}
+
+// Test: every declared route must still resolve to its own handler.
+expect(findMisroutedRoutes(routeConfig.routes)).toEqual([]);
+```
+
+- **One derivation.** Any code that registers or partitions routes must use `deriveUrlGroups`.
+  Two derivations that differ make two stacks create the same route key, and the deploy fails
+  with a 409.
+- **No catch-all.** `urlGroupOf` refuses a group that would answer every path: a parameter as
+  the group segment (`/api/v1/{id}`), or a path outside the base path that would group as
+  `/api`. `deriveUrlGroups` throws on those routes rather than leaving them unreachable.
+- **Resolution moves into the Lambda.** `getRouteConfigByPath` ranks static segments above
+  parameters (`/users/me` beats `/users/{userId}`). `findMisroutedRoutes` checks the whole
+  table: a route that resolves elsewhere would 404 or run the wrong handler. It also reports
+  Express-style `:param` paths, which never resolve.
+- **CORS preflight.** `ANY` includes `OPTIONS`, so API Gateway forwards preflights instead of
+  answering them from its CORS configuration. In rawPath mode the handler answers an `OPTIONS`
+  request with no declared `OPTIONS` route with `204`, before auth or module loading. API
+  Gateway still adds its configured CORS headers.
+- **Migration.** CloudFormation creates the new routes before deleting the old ones, so the API
+  briefly holds both sets. Keep that total under the routes-per-API quota.
 
 ---
 
