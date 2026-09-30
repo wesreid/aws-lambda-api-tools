@@ -35,43 +35,25 @@ const [configFile = './dist/routes-config.js', outputFile = './route-modules-oas
 const groupByTag = !argv['no-group-tags'];
 const includeMethodNameInDescription = !argv['no-method-names'];
 
-const swaggerModulePath = path.join('.', '../dist/lib/swagger-route-specification-generator');
-const { generateRouteSwaggerSpec } = require(swaggerModulePath);
+const { buildOpenApiDocument } = require(path.join('.', '../dist/lib/openapi-document-generator'));
 
 const configFilePath = path.join(process.cwd(), configFile);
 console.log(`config file path: ${configFilePath}`);
 const { config, routesBaseUrlPath } = require(configFilePath);
 
-const generatorOptions = {
-  routesBaseUrlPath,
-  groupByTag,
-  includeMethodNameInDescription,
+// Each route's module supplies its schema and its middleware chain; the chain's
+// declared security becomes the operation's standard `security`.
+const loadRouteModule = (handlerPath) => {
+  const routeHandlerModulePath = handlerPath.replace(process.cwd(), '.').replace('src/', 'dist/');
+  const loadedModule = require(path.join(process.cwd(), routeHandlerModulePath));
+  return loadedModule.default || loadedModule;
 };
 
-const swaggerSpec = { paths: {}, components: {} };
-
-config.routes.filter(r => r.generateOpenApiDocs).forEach(r => {
-
-  const routeHandlerModulePath = r.handlerPath.replace(process.cwd(), '.').replace('src/', 'dist/');
-
-  const loadedModule = require(path.join(process.cwd(), routeHandlerModulePath));
-  const { routeSchema } = loadedModule.default || loadedModule;
-
-  const { path: swaggerPathAndMethodSpec, components } = generateRouteSwaggerSpec(routeSchema, r, generatorOptions);
-
-  // Fallback: if tags weren't set by the generator (groupByTag=false), use base URL path
-  if (!swaggerPathAndMethodSpec.tags || swaggerPathAndMethodSpec.tags.length === 0) {
-    swaggerPathAndMethodSpec.tags = [routesBaseUrlPath.replace('/','.')];
-  }
-
-  let pathMethodItems = swaggerSpec.paths[r.path];
-  if (!pathMethodItems) {
-    pathMethodItems = swaggerSpec.paths[r.path] = {};
-  }
-  pathMethodItems[r.method.toLowerCase()] = swaggerPathAndMethodSpec;
-  swaggerSpec.paths[r.path] = { ...swaggerSpec.paths[r.path], ...pathMethodItems };
-  swaggerSpec.components.schemas = { ...swaggerSpec.components.schemas, ...components.schemas };
-});
+const swaggerSpec = buildOpenApiDocument(
+  { ...config, routesBaseUrlPath: routesBaseUrlPath ?? config.routesBaseUrlPath },
+  loadRouteModule,
+  { groupByTag, includeMethodNameInDescription },
+);
 
 fs.writeFileSync(path.join(process.cwd(), outputFile), JSON.stringify(swaggerSpec, null, 2));
 console.log(`OpenAPI spec written to ${outputFile} (${Object.keys(swaggerSpec.paths).length} paths)`);

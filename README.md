@@ -275,6 +275,8 @@ type ConfigRouteEntry = {
   functionName?: string;
   /** Async WebSocket binding metadata */
   asyncBinding?: AsyncBindingConfig;
+  /** OpenAPI `x-` extensions for this operation, emitted exactly as given */
+  extensions?: Record<`x-${string}`, unknown>;
 };
 
 type RouteConfig = {
@@ -290,8 +292,74 @@ type RouteConfig = {
   logging?: LoggingConfig;
   /** Resolve v2 events from rawPath instead of routeKey (required behind greedy routes) */
   useRawPath?: boolean;
+  /** Document-level OpenAPI declarations: `securitySchemes` */
+  openApi?: { securitySchemes?: Record<string, SecuritySchemeObject> };
 };
 ```
+
+---
+
+## Standard OpenAPI Security
+
+Each operation's `security` comes from what its middleware chain **declares**. The library holds no scheme names or permissions of its own: the product declares its schemes once in its route config, and marks its own middleware with `declareSecurity`.
+
+```typescript
+import { declareSecurity } from 'aws-lambda-api-tools';
+
+// Route config: the document's components.securitySchemes.
+export const config: RouteConfig = {
+  routes,
+  openApi: {
+    securitySchemes: {
+      userToken: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+      apiKey: { type: 'apiKey', in: 'header', name: 'x-api-key' },
+    },
+  },
+};
+
+// Authentication: any one of these schemes authenticates the request.
+export const requireUserOrKey = declareSecurity(async (args) => { /* ... */ return args; }, {
+  authenticates: ['userToken', 'apiKey'],
+});
+
+// Permissions: the authenticated caller must hold all of these.
+export const requirePermission = (...permissions: string[]) =>
+  declareSecurity(async (args) => { /* ... */ return args; }, { requires: permissions });
+
+// Route module
+export default { routeSchema, routeChain: [requireUserOrKey, requirePermission('orders:write')] };
+```
+
+`generate-oas` then emits, on that operation:
+
+```json
+"security": [
+  { "userToken": ["orders:write"] },
+  { "apiKey": ["orders:write"] }
+]
+```
+
+- One entry per way of authenticating. Authentication steps in series must all pass, so their alternatives multiply.
+- Required permissions are listed as each scheme's scopes: OpenAPI 3.1's role names required for the execution.
+- A chain that declares no authentication gets no `security`: the document never guesses.
+- Generation fails, naming the route, when a chain names a scheme missing from `openApi.securitySchemes`, or requires permissions without declaring authentication.
+- `declareSecurity` returns the same middleware; its behaviour is unchanged.
+
+## OpenAPI Extensions
+
+`extensions` on a route entry are emitted onto its operation exactly as given, so a product can declare its own `x-` data without the library knowing its meaning:
+
+```typescript
+{
+  swaggerMethodName: 'placeOrder',
+  // ...
+  extensions: { 'x-agent': { expose: true, effect: 'transaction' } },
+}
+```
+
+Every key must start with `x-`. `x-async-binding` is emitted from `asyncBinding`, not from `extensions`.
+
+`buildOpenApiDocument(config, loadRouteModule, options)` is the function behind `generate-oas`, for products that build their document in code.
 
 ---
 
