@@ -14,6 +14,12 @@ export type AsyncBindingConfig = {
   event: string;
   /** Room pattern for subscription (e.g., 'generation:{jobId}', 'user:{userId}') */
   room: string;
+  /**
+   * The response field that carries the job's id, when it is not named like the
+   * event's own id field (e.g. the route returns `generationJobId` and the event
+   * carries `jobId`). Agents read the id from here to wait for the event.
+   */
+  idField?: string;
   /** Additional lifecycle events beyond completion (progress, queued, failed, etc.) */
   lifecycleEvents?: AsyncBindingLifecycleEvent[];
   /** Human-readable description of when the completion event fires */

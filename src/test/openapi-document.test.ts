@@ -104,7 +104,7 @@ function fixtureConfig(overrides: Partial<RouteConfig> = {}): RouteConfig {
         path: '/api/v1/renders',
         handlerPath: 'src/routes/renders/start-render',
         swaggerMethodName: 'startRender',
-        asyncBinding: { event: 'render:completed', room: 'render:{renderId}' },
+        asyncBinding: { event: 'render:completed', room: 'render:{renderId}', idField: 'renderJobId' },
         extensions: { 'x-agent': { expose: true, effect: 'job' } },
       }),
       route({
@@ -169,7 +169,7 @@ describe('buildOpenApiDocument — standard security and extension pass-through'
     expect(health).not.toHaveProperty('x-agent');
 
     // The async binding is still emitted, next to a pass-through extension.
-    expect(render['x-async-binding']).toEqual({ event: 'render:completed', room: 'render:{renderId}' });
+    expect(render['x-async-binding']).toEqual({ event: 'render:completed', room: 'render:{renderId}', idField: 'renderJobId' });
     expect(render['x-agent']).toEqual({ expose: true, effect: 'job' });
     expect(render.security).toEqual([
       { userToken: ['renders:create'] },
