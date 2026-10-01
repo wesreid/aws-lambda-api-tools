@@ -361,6 +361,17 @@ Every key must start with `x-`. `x-async-binding` is emitted from `asyncBinding`
 
 `buildOpenApiDocument(config, loadRouteModule, options)` is the function behind `generate-oas`, for products that build their document in code.
 
+## OpenAPI 3.1
+
+`generate-oas --openapi 3.1 -- ./dist/routes-config.js` writes schemas as OpenAPI 3.1 defines them (JSON Schema 2020-12). In code, pass `buildOpenApiDocument(..., { openApiVersion: '3.1' })`. Set your root document's `openapi` to `3.1.0` to match.
+
+joi-to-swagger writes 3.0's dialect, and three of its keywords change:
+- `nullable: true` becomes a `null` type (`["string", "null"]`, with `null` added to any `enum`). On a reference or composition, which has no type to widen, it becomes `anyOf` with `{ "type": "null" }`. A 3.1 reader ignores `nullable`, so without this a field that admits null would read as one that does not.
+- Boolean `exclusiveMinimum`/`exclusiveMaximum` become numeric bounds.
+- `example` becomes `examples`.
+
+`toOpenApi31Schema` and `toOpenApi31Operation` are exported for documents built elsewhere.
+
 ---
 
 ## Greedy Proxy Routes
