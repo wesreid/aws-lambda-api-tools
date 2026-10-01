@@ -63,6 +63,10 @@ function buildAsyncBindingExtension(asyncBinding?: AsyncBindingConfig): Record<s
     room: asyncBinding.room,
   };
 
+  if (asyncBinding.idField) {
+    extension.idField = asyncBinding.idField;
+  }
+
   if (asyncBinding.description) {
     extension.description = asyncBinding.description;
   }

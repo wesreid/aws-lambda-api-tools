@@ -237,6 +237,8 @@ type AsyncBindingConfig = {
   event: string;
   /** Room/channel pattern for subscription (e.g., 'generation:{jobId}', 'user:{userId}') */
   room: string;
+  /** The response field carrying the job's id, when it is not named like the event's id field */
+  idField?: string;
   /** Additional lifecycle events beyond completion */
   lifecycleEvents?: Array<{
     event: string;
