@@ -89,6 +89,7 @@ export interface ResponseObject {
 
 export interface RequestBody {
   description?: string;
+  required?: boolean;
   content?: {
     [contentType: string]: { schema: ReferenceObject | SchemaObject };
   };

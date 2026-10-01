@@ -3,7 +3,13 @@ import { parse } from 'url';
 import { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { RouteConfig, RouteModule, RouteArguments, ConfigRouteEntry } from './types-and-interfaces';
 import { CustomError } from './custom-error';
-import { getRouteModule, getRouteConfigByPath } from './lambda-route-proxy-entry-handler';
+import {
+  getRouteModule,
+  getRouteConfigByPath,
+  errorResponseBody,
+  parseJsonBody,
+  NOT_FOUND_MESSAGE,
+} from './lambda-route-proxy-entry-handler';
 
 export interface DevServerOptions {
   port?: number;
@@ -104,6 +110,28 @@ function extractPathParameters(
 export function createDevServer(options: DevServerOptions): http.Server {
   const { port = 3001, routeConfig, routeModules, corsHeaders = defaultCorsHeaders } = options;
 
+  /** Answer an error: its status, and the product's error body or the library's own. */
+  const sendError = (res: http.ServerResponse, error: any) => {
+    if (res.headersSent) return;
+    let statusCode = 500;
+    let fallback: string;
+    if (error instanceof CustomError) {
+      statusCode = error.httpStatusCode || (error as any)._httpStatusCode || 500;
+      fallback = error.message;
+    } else if (error && typeof error === 'object' && '_httpStatusCode' in error) {
+      statusCode = error._httpStatusCode;
+      fallback = error._message || error.message || JSON.stringify({ success: false, error: 'Unknown error' });
+    } else if (error && typeof error === 'object' && 'httpStatusCode' in error) {
+      statusCode = error.httpStatusCode;
+      fallback = error.message || JSON.stringify({ success: false, error: 'Unknown error' });
+    } else {
+      fallback = JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+    const message = typeof error?.message === 'string' ? error.message : String(error);
+    res.writeHead(statusCode, { ...corsHeaders, 'Content-Type': 'application/json' });
+    res.end(errorResponseBody(routeConfig, { statusCode, message, error }, fallback));
+  };
+
   const server = http.createServer(async (req, res) => {
     console.log(`Request: ${req.method} ${req.url}`);
 
@@ -144,25 +172,26 @@ export function createDevServer(options: DevServerOptions): http.Server {
               'Content-Type': 'application/json',
             });
             res.end(
-              JSON.stringify({
-                success: false,
-                error: 'Route not found',
-                path: path,
-                method: method,
-                availableRoutes: routeConfig.routes.map((r) => `${r.method} ${r.path}`),
-              }),
+              errorResponseBody(
+                routeConfig,
+                { statusCode: 404, message: NOT_FOUND_MESSAGE, error: new CustomError(NOT_FOUND_MESSAGE, 404) },
+                JSON.stringify({
+                  success: false,
+                  error: 'Route not found',
+                  path: path,
+                  method: method,
+                  availableRoutes: routeConfig.routes.map((r) => `${r.method} ${r.path}`),
+                }),
+              ),
             );
             return;
           }
 
           // Parse body if it's JSON
+          // A JSON body that does not parse answers 400, as it does in the Lambda.
           let parsedBody: any = body;
           if (body && req.headers['content-type']?.includes('application/json')) {
-            try {
-              parsedBody = JSON.parse(body);
-            } catch (e) {
-              // Keep as string if parsing fails
-            }
+            parsedBody = parseJsonBody(body);
           }
 
           // Create RouteArguments
@@ -239,79 +268,12 @@ export function createDevServer(options: DevServerOptions): http.Server {
           res.end(responseBody);
         } catch (error: any) {
           console.error('Error:', error);
-
-          // Check if headers were already sent
-          if (!res.headersSent) {
-            let statusCode = 500;
-            let responseBody: string;
-
-            if (error instanceof CustomError) {
-              statusCode = error.httpStatusCode || error._httpStatusCode || 500;
-              responseBody = error.message;
-            } else if (error && typeof error === 'object') {
-              if ('_httpStatusCode' in error) {
-                statusCode = error._httpStatusCode;
-                responseBody = error._message || error.message || JSON.stringify({ success: false, error: 'Unknown error' });
-              } else if ('httpStatusCode' in error) {
-                statusCode = error.httpStatusCode;
-                responseBody = error.message || JSON.stringify({ success: false, error: 'Unknown error' });
-              } else {
-                responseBody = JSON.stringify({
-                  success: false,
-                  error: error instanceof Error ? error.message : 'Unknown error',
-                });
-              }
-            } else {
-              responseBody = JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : 'Unknown error',
-              });
-            }
-
-            res.writeHead(statusCode, {
-              ...corsHeaders,
-              'Content-Type': 'application/json',
-            });
-            res.end(responseBody);
-          }
+          sendError(res, error);
         }
       });
     } catch (error: any) {
       console.error('Error:', error);
-
-      if (!res.headersSent) {
-        let statusCode = 500;
-        let responseBody: string;
-
-        if (error instanceof CustomError) {
-          statusCode = error.httpStatusCode || error._httpStatusCode || 500;
-          responseBody = error.message;
-        } else if (error && typeof error === 'object') {
-          if ('_httpStatusCode' in error) {
-            statusCode = error._httpStatusCode;
-            responseBody = error._message || error.message || JSON.stringify({ success: false, error: 'Unknown error' });
-          } else if ('httpStatusCode' in error) {
-            statusCode = error.httpStatusCode;
-            responseBody = error.message || JSON.stringify({ success: false, error: 'Unknown error' });
-          } else {
-            responseBody = JSON.stringify({
-              success: false,
-              error: error instanceof Error ? error.message : 'Unknown error',
-            });
-          }
-        } else {
-          responseBody = JSON.stringify({
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
-        }
-
-        res.writeHead(statusCode, {
-          ...corsHeaders,
-          'Content-Type': 'application/json',
-        });
-        res.end(responseBody);
-      }
+      sendError(res, error);
     }
   });
 
@@ -320,7 +282,8 @@ export function createDevServer(options: DevServerOptions): http.Server {
     console.log('📡 API endpoints available:');
 
     // Dynamically list all routes from the route configuration
-    routeConfig.routes
+    // A copy: sorting the config itself would reorder route resolution's tie-break.
+    [...routeConfig.routes]
       .sort((a, b) => a.path.localeCompare(b.path))
       .forEach((route) => {
         console.log(`  ${route.method.padEnd(5)} ${route.path}`);
