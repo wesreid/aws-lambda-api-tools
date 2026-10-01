@@ -2,8 +2,15 @@ import joi from 'joi';
 import { RouteArguments, RouteSchema } from '../types-and-interfaces';
 import { CustomError } from '../custom-error';
 
+/**
+ * Validate a request's params, query and body against the route's schema, and
+ * answer 400 listing every failure.
+ *
+ * It writes nothing to the log. It used to log the whole incoming argument object
+ * (which carries the raw event, so the caller's Authorization header), each schema,
+ * and the body twice, on every request. A rejection's reasons are in the 400 itself.
+ */
 export const schemaValidationMiddleware = (routeSchema: RouteSchema) => (incomingData: RouteArguments): RouteArguments => {
-  console.log(JSON.stringify(incomingData));
   let { params, body, query, ...rest } = incomingData;
   params = params || {};
   body = body || {};
@@ -16,32 +23,23 @@ export const schemaValidationMiddleware = (routeSchema: RouteSchema) => (incomin
     query: [] as Array<any>,
   };
   if (sParams) {
-    console.log(`params schema: ${JSON.stringify(sParams)}`);
-    console.log(`params data: ${JSON.stringify(params)}`);
     try {
       validatedOutput.params = joi.attempt(params, joi.compile(sParams), { abortEarly: false });
     } catch (err: any) {
-      console.error(`sParams Error: ${JSON.stringify(err)}`);
       errorMap.params.push(...err.details.map((d: { message: any; }) => d.message));
     }
   }
   if (sBody) {
-    console.log(`body schema: ${JSON.stringify(sBody)}`);
-    console.log(`body data: ${JSON.stringify(body)}`);
     try {
       validatedOutput.body = joi.attempt(body, joi.compile(sBody), { allowUnknown: true, abortEarly: false });
     } catch (err: any) {
-      console.error(`sBody Error: ${JSON.stringify(err)}`);
       errorMap.body.push(...err.details.map((d: { message: any; }) => d.message));
     }
   }
   if (sQuery) {
-    console.log(`query schema: ${JSON.stringify(sQuery)}`);
-    console.log(`query data: ${JSON.stringify(query)}`);
     try {
       validatedOutput.query = joi.attempt(query, joi.compile(sQuery), { abortEarly: false });
     } catch (err: any) {
-      console.error(`sQuery Error: ${JSON.stringify(err)}`);
       errorMap.query.push(...err.details.map((d: { message: any; }) => d.message));
     }
   }
