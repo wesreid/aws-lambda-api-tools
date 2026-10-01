@@ -83,6 +83,7 @@ export {
 export type { SecurityDeclaration, SecurityRequirementObject } from "./lib/openapi-security";
 
 export { buildOpenApiDocument } from "./lib/openapi-document-generator";
+export { toOpenApi31Schema, toOpenApi31Operation } from "./lib/openapi-31";
 export type { RouteOpenApiDocument, BuildOpenApiDocumentOptions } from "./lib/openapi-document-generator";
 
 export {

@@ -1,6 +1,7 @@
 import type { ComponentsSchema } from 'joi-to-swagger';
 import { generateRouteSwaggerSpec, SwaggerGeneratorOptions } from './swagger-route-specification-generator';
 import type { RouteConfig, RouteModule, SecuritySchemeObject } from './types-and-interfaces';
+import { toOpenApi31Operation, toOpenApi31Schema } from './openapi-31';
 
 type Operation = ReturnType<typeof generateRouteSwaggerSpec>['path'];
 
@@ -13,7 +14,14 @@ export type RouteOpenApiDocument = {
   };
 };
 
-export type BuildOpenApiDocumentOptions = Pick<SwaggerGeneratorOptions, 'groupByTag' | 'includeMethodNameInDescription'>;
+export type BuildOpenApiDocumentOptions = Pick<SwaggerGeneratorOptions, 'groupByTag' | 'includeMethodNameInDescription'> & {
+  /**
+   * The OpenAPI version the schemas are written for. `3.1` writes them as JSON
+   * Schema 2020-12 (a `null` type, not 3.0's `nullable`); default `3.0`, as
+   * joi-to-swagger writes them. Set the root document's `openapi` to match.
+   */
+  openApiVersion?: '3.0' | '3.1';
+};
 
 /**
  * Build the OpenAPI paths and components for every route with `generateOpenApiDocs`.
@@ -47,9 +55,18 @@ export function buildOpenApiDocument(
       operation.tags = [(routesBaseUrlPath ?? '').replace('/', '.')];
     }
 
+    const as31 = options.openApiVersion === '3.1';
     const methods = (doc.paths[route.path] ??= {});
-    methods[route.method.toLowerCase()] = operation;
-    doc.components.schemas = { ...doc.components.schemas, ...components.schemas };
+    methods[route.method.toLowerCase()] = as31 ? toOpenApi31Operation(operation) : operation;
+    const schemas = as31
+      ? Object.fromEntries(
+          Object.entries(components.schemas).map(([name, schema]) => [
+            name,
+            toOpenApi31Schema(schema as Record<string, unknown>) as typeof schema,
+          ]),
+        )
+      : components.schemas;
+    doc.components.schemas = { ...doc.components.schemas, ...schemas };
   }
   if (securitySchemes && Object.keys(securitySchemes).length > 0) {
     doc.components.securitySchemes = { ...securitySchemes };

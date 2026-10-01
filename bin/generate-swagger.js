@@ -7,6 +7,8 @@ Usage:
 Options:
   --no-group-tags                 Disable automatic tag grouping (all routes under a single tag)
   --no-method-names               Disable appending apiClient method names to descriptions
+  --openapi <3.0|3.1>             The OpenAPI version the schemas are written for (default 3.0);
+                                  3.1 writes a null type instead of 3.0's nullable
 
 Examples:
   npm run generate-swagger -- ./dist/routes-config.js ./route-modules-oas.json
@@ -17,6 +19,7 @@ const minimist = require('minimist');
 const path = require('path');
 const argv = minimist(process.argv.slice(2), {
   boolean: ['no-group-tags', 'no-method-names'],
+  string: ['openapi'],
   default: {
     'no-group-tags': false,
     'no-method-names': false,
@@ -34,6 +37,11 @@ const [configFile = './dist/routes-config.js', outputFile = './route-modules-oas
 
 const groupByTag = !argv['no-group-tags'];
 const includeMethodNameInDescription = !argv['no-method-names'];
+const openApiVersion = argv.openapi === undefined ? '3.0' : String(argv.openapi);
+if (openApiVersion !== '3.0' && openApiVersion !== '3.1') {
+  console.error(`--openapi must be 3.0 or 3.1, not ${openApiVersion}`);
+  process.exit(2);
+}
 
 const { buildOpenApiDocument } = require(path.join('.', '../dist/lib/openapi-document-generator'));
 
@@ -52,7 +60,7 @@ const loadRouteModule = (handlerPath) => {
 const swaggerSpec = buildOpenApiDocument(
   { ...config, routesBaseUrlPath: routesBaseUrlPath ?? config.routesBaseUrlPath },
   loadRouteModule,
-  { groupByTag, includeMethodNameInDescription },
+  { groupByTag, includeMethodNameInDescription, openApiVersion },
 );
 
 fs.writeFileSync(path.join(process.cwd(), outputFile), JSON.stringify(swaggerSpec, null, 2));
