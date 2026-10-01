@@ -1,7 +1,8 @@
 import * as joi from 'joi';
 import joiToSwagger, { ComponentsSchema } from 'joi-to-swagger';
-import { ConfigRouteEntry, RouteSchema, AsyncBindingConfig } from './types-and-interfaces';
+import { ConfigRouteEntry, RouteSchema, AsyncBindingConfig, MiddlewareChain, SecuritySchemeObject } from './types-and-interfaces';
 import * as swaggerTypes from './swagger-specification-types';
+import { assertSchemesDeclared, securityOfChain, SecurityRequirementObject } from './openapi-security';
 
 type RouteSpecType = {
   path: {
@@ -11,7 +12,9 @@ type RouteSpecType = {
     parameters?: Array<swaggerTypes.ParameterObject>,
     requestBody?: swaggerTypes.RequestBody,
     responses?: Record<string, swaggerTypes.ResponseObject>,
+    security?: SecurityRequirementObject[],
     'x-async-binding'?: Record<string, unknown>,
+    [extension: `x-${string}`]: unknown,
   },
   components: {
     schemas: Record<string, ComponentsSchema>,
@@ -25,6 +28,11 @@ export type SwaggerGeneratorOptions = {
   groupByTag?: boolean;
   /** If true, appends `apiClient.{methodName}` to the description. Defaults to true. */
   includeMethodNameInDescription?: boolean;
+  /**
+   * The document's security schemes. When a route's chain declares security, every
+   * scheme it names must be one of these.
+   */
+  securitySchemes?: Record<string, SecuritySchemeObject>;
 };
 
 /**
@@ -75,14 +83,52 @@ function buildAsyncBindingExtension(asyncBinding?: AsyncBindingConfig): Record<s
   return { 'x-async-binding': extension };
 }
 
-export const generateRouteSwaggerSpec = (schema: RouteSchema, routeEntry: ConfigRouteEntry, options?: SwaggerGeneratorOptions): RouteSpecType => {
+/** The route's `x-` extensions, emitted exactly as declared. */
+function buildPassThroughExtensions(routeEntry: ConfigRouteEntry, route: string): Record<string, unknown> {
+  const extensions = routeEntry.extensions;
+  if (!extensions) return {};
+  for (const key of Object.keys(extensions)) {
+    if (!key.startsWith('x-')) {
+      throw new Error(`${route}: extension "${key}" is not an OpenAPI extension; its name must start with "x-"`);
+    }
+    if (key === 'x-async-binding') {
+      throw new Error(`${route}: x-async-binding is emitted from the route's asyncBinding, not from extensions`);
+    }
+  }
+  return { ...extensions };
+}
+
+/** The route's standard `security`, from what its middleware chain declares. */
+function buildSecurity(
+  routeChain: MiddlewareChain | undefined,
+  securitySchemes: Record<string, SecuritySchemeObject> | undefined,
+  route: string,
+): { security?: SecurityRequirementObject[] } {
+  const security = securityOfChain(routeChain, route);
+  if (!security) return {};
+  assertSchemesDeclared(security, securitySchemes, route);
+  return { security };
+}
+
+/**
+ * The OpenAPI operation for one route. Pass the route's middleware chain to emit its
+ * standard `security` (see `declareSecurity`).
+ */
+export const generateRouteSwaggerSpec = (
+  schema: RouteSchema,
+  routeEntry: ConfigRouteEntry,
+  options?: SwaggerGeneratorOptions,
+  routeChain?: MiddlewareChain,
+): RouteSpecType => {
   const { requestBody: requestBodyJoiSchema, query: queryJoiSchema, params: pathParamsJoiSchema, responseBody: responseBodyJoiSchema } = { requestBody: {}, query: {}, params: {}, responseBody: {}, ...schema };
   const { description, swaggerMethodName, tag, path: routePath } = routeEntry;
   const {
     routesBaseUrlPath,
     groupByTag = true,
     includeMethodNameInDescription = true,
+    securitySchemes,
   } = options || {};
+  const routeName = `${routeEntry.method} ${routePath}`;
   // console.log('schema:')
   // console.log(schema);
   let parameters: Array<swaggerTypes.ParameterObject> = [];
@@ -178,7 +224,9 @@ export const generateRouteSwaggerSpec = (schema: RouteSchema, routeEntry: Config
       responses: {
         '200': responseBody,
       },
+      ...buildSecurity(routeChain, securitySchemes, routeName),
       ...buildAsyncBindingExtension(routeEntry.asyncBinding),
+      ...buildPassThroughExtensions(routeEntry, routeName),
     },
     components: {
       schemas: componentSchemas,

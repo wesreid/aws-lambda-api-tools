@@ -15,6 +15,8 @@ export type {
   RouteSchema,
   ConfigRouteEntry,
   RouteConfig,
+  OpenApiConfig,
+  SecuritySchemeObject,
   Permission,
   SecurityConfig,
   LoggingConfig,
@@ -71,6 +73,17 @@ export {
   deriveTagFromPath,
 } from "./lib/swagger-route-specification-generator";
 export type { SwaggerGeneratorOptions } from "./lib/swagger-route-specification-generator";
+
+// Standard OpenAPI `security`, declared by the product on its own middleware.
+export {
+  declareSecurity,
+  securityDeclarationOf,
+  securityOfChain,
+} from "./lib/openapi-security";
+export type { SecurityDeclaration, SecurityRequirementObject } from "./lib/openapi-security";
+
+export { buildOpenApiDocument } from "./lib/openapi-document-generator";
+export type { RouteOpenApiDocument, BuildOpenApiDocumentOptions } from "./lib/openapi-document-generator";
 
 export {
   generateRouteModules,

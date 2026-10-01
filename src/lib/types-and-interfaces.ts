@@ -36,6 +36,11 @@ export type ConfigRouteEntry = {
   /** Declares the async WebSocket event(s) that correspond to this route's asynchronous result */
   asyncBinding?: AsyncBindingConfig;
   /**
+   * OpenAPI specification extensions for this route's operation, emitted exactly as
+   * given. Every key starts with `x-`. `x-async-binding` is emitted from `asyncBinding`.
+   */
+  extensions?: Record<`x-${string}`, unknown>;
+  /**
    * Namespace for multi-Lambda deployments. Routes with the same namespace are
    * bundled and deployed together. When used with `generate-route-modules --namespace X`,
    * only handlers belonging to that namespace are included in the generated map.
@@ -88,6 +93,22 @@ export type LoggingConfig = {
   requestSummary?: boolean;
 };
 
+/** An OpenAPI security scheme object (`components.securitySchemes`), as the product declares it. */
+export type SecuritySchemeObject =
+  | { type: 'apiKey'; name: string; in: 'query' | 'header' | 'cookie'; description?: string }
+  | { type: 'http'; scheme: string; bearerFormat?: string; description?: string }
+  | { type: 'mutualTLS'; description?: string }
+  | { type: 'oauth2'; flows: Record<string, unknown>; description?: string }
+  | { type: 'openIdConnect'; openIdConnectUrl: string; description?: string };
+
+export type OpenApiConfig = {
+  /**
+   * The document's `components.securitySchemes`. Every scheme a route's middleware
+   * declares (`declareSecurity`) must be one of these.
+   */
+  securitySchemes?: Record<string, SecuritySchemeObject>;
+};
+
 export type RouteConfig = {
   authorizeAllRoutes?: boolean;
   routes: Array<ConfigRouteEntry>;
@@ -100,6 +121,8 @@ export type RouteConfig = {
    * where routeKey is `"ANY /prefix/{proxy+}"` rather than `"GET /actual/path"`.
    */
   useRawPath?: boolean;
+  /** Document-level OpenAPI declarations. */
+  openApi?: OpenApiConfig;
 };
 
 export type RouteArguments = {
