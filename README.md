@@ -296,10 +296,38 @@ type RouteConfig = {
   useRawPath?: boolean;
   /** Document-level OpenAPI declarations: `securitySchemes` */
   openApi?: { securitySchemes?: Record<string, SecuritySchemeObject> };
+  /** The body of every error response, as JSON (see Error Handling) */
+  errorBody?: (failure: { statusCode: number; message: string; error: unknown }) => unknown;
 };
 ```
 
 ---
+
+## Declared Responses
+
+A route declares every response it can give, by status code, in `routeSchema.responses`: success and error alike. `generate-oas` emits each one on the operation, so a generated client types all of them.
+
+```typescript
+const ErrorBody = Joi.object({
+  error: Joi.object({ code: Joi.string().required(), message: Joi.string().required() }).required(),
+}).meta({ className: 'ErrorBody' });
+
+const routeSchema: RouteSchema = {
+  params: { orderId: Joi.string().required() },
+  requestBody: Joi.object({ quantity: Joi.number().integer().min(1).required() }).required(),
+  responses: {
+    '201': { description: 'The order was placed', body: Order },
+    '204': { description: 'Nothing to place' },
+    '400': { description: 'The request is invalid', body: ErrorBody },
+    '404': { description: 'The account does not exist', body: ErrorBody },
+  },
+};
+```
+
+- Keys are HTTP status codes (`100`–`599`) or `default`. Every response needs a `description`; one without a `body` has no content.
+- A named schema (`.meta({ className })`) becomes a component and is referenced by `$ref`, wherever it appears in a body.
+- A request body whose schema is `.required()` is emitted with `required: true`.
+- A route declares `responses` or `responseBody`, not both; generation fails naming the route. A route that declares neither keeps the single `200` it always had.
 
 ## Standard OpenAPI Security
 
@@ -624,6 +652,31 @@ import { CustomError } from 'aws-lambda-api-tools';
 throw new CustomError('User not found', 404);
 throw new CustomError('Insufficient permissions', 403);
 ```
+
+By default an error's body is its message. Declare `errorBody` on the route config to give every error response one JSON body, the one your routes declare in `responses`:
+
+```typescript
+class ApiError extends CustomError {
+  constructor(message: string, statusCode: number, readonly code: string) {
+    super(message, statusCode);
+  }
+}
+
+export const config: RouteConfig = {
+  routes,
+  errorBody: ({ statusCode, message, error }) => ({
+    error: {
+      code: error instanceof ApiError ? error.code : `HTTP_${statusCode}`,
+      // An unexpected error's message is internal; say so instead.
+      message: error instanceof CustomError ? message : 'Internal server error',
+    },
+  }),
+};
+```
+
+It applies to every error the library answers: an error thrown in a route's chain, a request body that is not JSON, and, in rawPath mode and the dev server, a path no route matches. `error` is what was thrown, or the library's own `CustomError` for a failure it detects.
+
+A request body that is not valid JSON answers **400** (`Request body is not valid JSON`). It used to answer 500.
 
 ---
 
