@@ -114,6 +114,49 @@ function buildSecurity(
   return { security };
 }
 
+/** A Joi schema as an OpenAPI JSON media type, with the named schemas it references. */
+function jsonContent(schema: joi.Schema): { content: NonNullable<swaggerTypes.RequestBody['content']>; components: Record<string, ComponentsSchema> } {
+  const { swagger, components } = joiToSwagger(schema);
+  return {
+    content: { 'application/json': { schema: swagger } },
+    // Every named schema the body reaches, not only the body's own: a named schema
+    // nested in an unnamed body is referenced by `$ref` and must be defined.
+    components: components?.schemas ?? {},
+  };
+}
+
+const RESPONSE_STATUS = /^[1-5][0-9][0-9]$/;
+
+/** The route's declared `responses`, as OpenAPI responses. */
+function buildDeclaredResponses(
+  responses: NonNullable<RouteSchema['responses']>,
+  route: string,
+): { responses: Record<string, swaggerTypes.ResponseObject>; components: Record<string, ComponentsSchema> } {
+  const out: Record<string, swaggerTypes.ResponseObject> = {};
+  let components: Record<string, ComponentsSchema> = {};
+  for (const [status, declared] of Object.entries(responses)) {
+    if (status !== 'default' && !RESPONSE_STATUS.test(status)) {
+      throw new Error(`${route}: response status "${status}" is not an HTTP status code (100-599) or "default"`);
+    }
+    if (!declared || typeof declared.description !== 'string' || declared.description.trim() === '') {
+      throw new Error(`${route}: response ${status} needs a description`);
+    }
+    if (declared.body === undefined) {
+      out[status] = { description: declared.description };
+      continue;
+    }
+    const media = jsonContent(declared.body);
+    out[status] = { description: declared.description, content: media.content };
+    components = { ...components, ...media.components };
+  }
+  return { responses: out, components };
+}
+
+/** Whether a request body schema says the body must be sent. */
+function isRequired(schema: joi.Schema): boolean {
+  return (schema as unknown as { _flags?: { presence?: string } })._flags?.presence === 'required';
+}
+
 /**
  * The OpenAPI operation for one route. Pass the route's middleware chain to emit its
  * standard `security` (see `declareSecurity`).
@@ -133,13 +176,13 @@ export const generateRouteSwaggerSpec = (
     securitySchemes,
   } = options || {};
   const routeName = `${routeEntry.method} ${routePath}`;
-  // console.log('schema:')
-  // console.log(schema);
+  const declaresResponses = schema.responses !== undefined;
+  if (declaresResponses && schema.responseBody !== undefined) {
+    throw new Error(`${routeName}: declare responses or responseBody, not both`);
+  }
   let parameters: Array<swaggerTypes.ParameterObject> = [];
   let requestBody: swaggerTypes.RequestBody | undefined = undefined;
-  let responseBody: swaggerTypes.ResponseObject = { description: 'Default response' };
-  // let requestBodyRefKey: string | undefined;
-  // let responseBodyRefKey: string | undefined;
+  let responses: Record<string, swaggerTypes.ResponseObject> = { '200': { description: 'Default response' } };
   let componentSchemas: Record<string, ComponentsSchema> = {};
   if (pathParamsJoiSchema && Object.keys(pathParamsJoiSchema).length > 0) {
     const pathParamsKeys = Object.keys(pathParamsJoiSchema);
@@ -165,41 +208,23 @@ export const generateRouteSwaggerSpec = (
     parameters = Array<swaggerTypes.ParameterObject>().concat(parameters, queryParamsSwaggerParameters);
   }
   if (requestBodyJoiSchema && Object.keys(requestBodyJoiSchema).length > 0) {
-    const { swagger, components: requestComponent } = joiToSwagger(
-      joi.isSchema(requestBodyJoiSchema) ? requestBodyJoiSchema : joi.object(requestBodyJoiSchema)
-    );
+    const bodySchema = joi.isSchema(requestBodyJoiSchema) ? requestBodyJoiSchema : joi.object(requestBodyJoiSchema);
+    const media = jsonContent(bodySchema);
     requestBody = {
       description: 'Default response body',
-      content: {
-        'application/json': {
-          schema: swagger,
-        },
-      },
+      ...(isRequired(bodySchema) ? { required: true } : {}),
+      content: media.content,
     };
-    // console.log(swagger);
-    if (swagger.$ref || (swagger.items && swagger.items.$ref)) {
-      // requestBodyRefKey = swagger.$ref.split('/').reverse()[0];
-      componentSchemas = { ...componentSchemas, ...requestComponent!.schemas };
-    }
+    componentSchemas = { ...componentSchemas, ...media.components };
   }
-  if (responseBodyJoiSchema && Object.keys(responseBodyJoiSchema).length > 0) {
-    const { swagger, components: responseComponent } = joiToSwagger(
-      joi.isSchema(responseBodyJoiSchema) ? responseBodyJoiSchema : joi.object(responseBodyJoiSchema)
-    );
-    // console.log(JSON.stringify(j2s, null, 2));
-    // console.log(swagger);
-    responseBody = {
-      description: 'Default response body',
-      content: {
-        'application/json': {
-          schema: swagger,
-        },
-      },
-    };
-    if (swagger.$ref || (swagger.items && swagger.items.$ref)) {
-      // responseBodyRefKey = swagger.$ref.split('/').reverse()[0];
-      componentSchemas = { ...componentSchemas, ...responseComponent!.schemas };
-    }
+  if (declaresResponses) {
+    const declared = buildDeclaredResponses(schema.responses!, routeName);
+    responses = declared.responses;
+    componentSchemas = { ...componentSchemas, ...declared.components };
+  } else if (responseBodyJoiSchema && Object.keys(responseBodyJoiSchema).length > 0) {
+    const media = jsonContent(joi.isSchema(responseBodyJoiSchema) ? responseBodyJoiSchema : joi.object(responseBodyJoiSchema));
+    responses = { '200': { description: 'Default response body', content: media.content } };
+    componentSchemas = { ...componentSchemas, ...media.components };
   }
 
   // Build enhanced description with API client method name
@@ -225,9 +250,7 @@ export const generateRouteSwaggerSpec = (
       ...(tags.length > 0 ? { tags } : {}),
       parameters,
       requestBody,
-      responses: {
-        '200': responseBody,
-      },
+      responses,
       ...buildSecurity(routeChain, securitySchemes, routeName),
       ...buildAsyncBindingExtension(routeEntry.asyncBinding),
       ...buildPassThroughExtensions(routeEntry, routeName),

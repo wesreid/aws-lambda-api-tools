@@ -7,6 +7,7 @@ import { CustomError } from "./custom-error";
 import {
   RouteConfig,
   ConfigRouteEntry,
+  ErrorBodyInput,
   RouteArguments,
   RouteModule,
   SecurityConfig,
@@ -279,6 +280,41 @@ export function finalizeApiGatewayResponse(
  * the caller as a malformed-response 502. Serializing in one place means
  * no handler or branch has to remember.
  */
+/**
+ * A request body as JSON. A body that is not JSON is the caller's error, so it
+ * answers 400; it used to escape as a SyntaxError and answer 500.
+ */
+export function parseJsonBody(rawBody: string): unknown {
+  try {
+    return JSON.parse(rawBody);
+  } catch {
+    throw new CustomError(MALFORMED_BODY_MESSAGE, 400);
+  }
+}
+
+export const MALFORMED_BODY_MESSAGE = "Request body is not valid JSON";
+export const NOT_FOUND_MESSAGE = "Not found";
+
+/**
+ * The body of an error response. With `RouteConfig.errorBody`, the product's own
+ * body as JSON; without it, `fallback`, which is what the library always sent.
+ */
+export function errorResponseBody(
+  config: Pick<RouteConfig, "errorBody">,
+  failure: ErrorBodyInput,
+  fallback: string
+): string {
+  if (!config.errorBody) return fallback;
+  return JSON.stringify(config.errorBody(failure));
+}
+
+/** The body of the error response for something thrown in a route's chain. */
+function thrownErrorBody(config: RouteConfig, error: any, statusCode: number): string {
+  const fallback = error instanceof CustomError ? error.message : error.message || JSON.stringify(error);
+  const message = typeof error?.message === "string" ? error.message : String(error);
+  return errorResponseBody(config, { statusCode, message, error }, fallback);
+}
+
 function serializeResponseBody(body: unknown): string {
   if (body === undefined || body === null) return "";
   return typeof body === "string" ? body : JSON.stringify(body);
@@ -357,7 +393,11 @@ export const lambdaRouteProxyEntryHandler =
                 "Content-Type": "application/json",
                 ...corsHeaders,
               },
-              body: err.message,
+              body: errorResponseBody(
+                config,
+                { statusCode: 404, message: NOT_FOUND_MESSAGE, error: err },
+                err.message
+              ),
             };
           }
           throw err;
@@ -404,7 +444,7 @@ export const lambdaRouteProxyEntryHandler =
             const rawBody = isBase64
               ? Buffer.from(body, "base64").toString("utf-8")
               : body;
-            parsedBody = JSON.parse(rawBody);
+            parsedBody = parseJsonBody(rawBody);
           }
 
           if (debug) {
@@ -461,20 +501,15 @@ export const lambdaRouteProxyEntryHandler =
             ...corsHeaders,
           } as Record<string, string>;
 
-          const statusCode = error.httpStatusCode || 500;
-          if (error instanceof CustomError) {
-            retVal = {
-              statusCode: error.httpStatusCode || error._httpStatusCode || 500,
-              headers,
-              body: error.message,
-            };
-          } else {
-            retVal = {
-              statusCode,
-              headers,
-              body: error.message || JSON.stringify(error),
-            };
-          }
+          const statusCode =
+            error instanceof CustomError
+              ? error.httpStatusCode || (error as any)._httpStatusCode || 500
+              : error.httpStatusCode || 500;
+          retVal = {
+            statusCode,
+            headers,
+            body: thrownErrorBody(config, error, statusCode),
+          };
         }
         return retVal;
       }
@@ -522,7 +557,7 @@ export const lambdaRouteProxyEntryHandler =
           const rawBody = isBase64Encoded
             ? Buffer.from(body, "base64").toString("utf-8")
             : body;
-          parsedBody = JSON.parse(rawBody);
+          parsedBody = parseJsonBody(rawBody);
         }
 
         if (debug) {
@@ -633,18 +668,13 @@ export const lambdaRouteProxyEntryHandler =
           statusCode = error.httpStatusCode || 500;
         }
         if (error instanceof CustomError) {
-          retVal = {
-            statusCode: error.httpStatusCode || error._httpStatusCode || 500,
-            headers,
-            body: error.message,
-          };
-        } else {
-          retVal = {
-            statusCode,
-            headers,
-            body: error.message || JSON.stringify(error),
-          };
+          statusCode = error.httpStatusCode || (error as any)._httpStatusCode || 500;
         }
+        retVal = {
+          statusCode,
+          headers,
+          body: thrownErrorBody(config, error, statusCode),
+        };
       }
       return retVal;
     };

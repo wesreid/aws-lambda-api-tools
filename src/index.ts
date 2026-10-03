@@ -13,6 +13,8 @@ export type {
   RouteModule,
   RouteResponse,
   RouteSchema,
+  RouteResponseSchema,
+  ErrorBodyInput,
   ConfigRouteEntry,
   RouteConfig,
   OpenApiConfig,

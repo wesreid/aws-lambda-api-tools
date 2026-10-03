@@ -129,6 +129,27 @@ export type RouteConfig = {
   useRawPath?: boolean;
   /** Document-level OpenAPI declarations. */
   openApi?: OpenApiConfig;
+  /**
+   * The body of every error response the library gives: an error thrown by a route's
+   * chain, a request body that is not JSON (400) and, in rawPath mode and the dev
+   * server, a path no route matches (404). Its return value is serialized as JSON.
+   *
+   * Without it, an error's body is its message, as before.
+   */
+  errorBody?: (failure: ErrorBodyInput) => unknown;
+};
+
+/** What `RouteConfig.errorBody` is given for one error response. */
+export type ErrorBodyInput = {
+  /** The status the response carries. */
+  statusCode: number;
+  /** The error's message, or the library's own for a failure it detects. */
+  message: string;
+  /**
+   * What was thrown, so a product can read its own error's fields. For a failure the
+   * library detects itself, the `CustomError` it raised.
+   */
+  error: unknown;
 };
 
 export type RouteArguments = {
@@ -145,8 +166,24 @@ export interface RouteSchema {
   params?: { [key: string]: Schema<any> };
   query?: { [key: string]: Schema<any> };
   form?: { [key: string]: Schema<any> };
+  /** The request body. It is required in the OpenAPI document when the schema is `.required()`. */
   requestBody?: Schema<any> | { [key: string]: Schema<any> };
+  /** The `200` response's body. A route declares this or `responses`, not both. */
   responseBody?: Schema<any> | { [key: string]: Schema<any> };
+  /**
+   * Every response the route can give, keyed by HTTP status code (`'201'`, `'404'`) or
+   * `'default'`: success and error alike. Each is emitted on the operation in the
+   * OpenAPI document; a response without a `body` has no content (a `204`).
+   */
+  responses?: { [status: string]: RouteResponseSchema };
+}
+
+/** One declared response of a route. */
+export interface RouteResponseSchema {
+  /** What this response means. Required by OpenAPI. */
+  description: string;
+  /** The response's JSON body, if it has one. */
+  body?: Schema<any>;
 }
 
 export interface BaseResponseObject extends swaggerTypes.ResponseObject {}
